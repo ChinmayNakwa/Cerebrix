@@ -1,12 +1,12 @@
 'use client';
 import { motion } from 'framer-motion';
 import Link from 'next/link';
-import { ArrowRight, BrainCircuit, Youtube, BookOpen, MessageSquareText, Layers } from 'lucide-react';
+import { ArrowRight, BrainCircuit, Video, BookOpen, MessageSquareText, Layers } from 'lucide-react';
 
 export default function LandingPage() {
   const features = [
     {
-      icon: <Youtube className="text-red-500" />,
+      icon: <Video className="text-red-500" />,
       title: "Video Intelligence",
       desc: "Ingests full YouTube playlists and connects concepts across lectures."
     },
