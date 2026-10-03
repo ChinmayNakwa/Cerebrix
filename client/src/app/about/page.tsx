@@ -1,5 +1,4 @@
-'use client';
-import { motion } from 'framer-motion';
+import * as motion from 'framer-motion/client';
 
 export default function AboutPage() {
     const stack = [
