@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { X, Plus, Menu, MessageSquare, Trash2 } from 'lucide-react';
 import MessageList, { type Message } from '@/src/components/MessageList';
 import ChatInput from '@/src/components/ChatInput';
+import { imageToBase64 } from '@/src/lib/image';
 
 // --- Types ---
 
@@ -156,7 +157,7 @@ export default function ChatPage() {
 
         try {
             let imageData = null;
-            if (currentImage) imageData = await toBase64(currentImage);
+            if (currentImage) imageData = await imageToBase64(currentImage);
 
             const res = await fetch('/api/py/ask', {
                 method: 'POST',
@@ -174,15 +175,6 @@ export default function ChatPage() {
         } finally {
             setIsLoading(false);
         }
-    };
-
-    const toBase64 = (file: File): Promise<string> => {
-        return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.readAsDataURL(file);
-            reader.onload = () => resolve((reader.result as string).split(',')[1]);
-            reader.onerror = error => reject(error);
-        });
     };
 
     return (
