@@ -84,11 +84,11 @@ export default function ChatPage() {
 
     // --- Actions ---
 
-    const handleNewChat = () => {
+    const handleNewChat = (existingSessions: ChatSession[] = sessions) => {
         const newId = createNewSessionId();
         const newSession = { id: newId, preview: "New Conversation", timestamp: Date.now() };
         
-        const updatedSessions = [newSession, ...sessions];
+        const updatedSessions = [newSession, ...existingSessions];
         setSessions(updatedSessions);
         localStorage.setItem('my_chat_sessions', JSON.stringify(updatedSessions));
         
@@ -123,8 +123,8 @@ export default function ChatPage() {
                 // Switch to the first available session
                 handleSelectSession(updatedSessions[0].id);
             } else {
-                // No sessions left, create a fresh one
-                handleNewChat();
+                // No sessions left, create a fresh one (from the filtered list, not stale state)
+                handleNewChat(updatedSessions);
             }
         }
 
@@ -191,7 +191,7 @@ export default function ChatPage() {
                     >
                         <div className="p-4">
                             <button 
-                                onClick={handleNewChat}
+                                onClick={() => handleNewChat()}
                                 className="w-full flex items-center justify-center gap-2 bg-indigo-600/20 hover:bg-indigo-600/40 border border-indigo-500/30 text-indigo-100 p-3 rounded-xl transition-all shadow-sm"
                             >
                                 <Plus size={18} />
