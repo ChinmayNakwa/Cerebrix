@@ -44,8 +44,12 @@ export default function ChatInput({ isLoading, onSend, onBusyChange }: ChatInput
                     try {
                         const res = await fetch('/api/py/transcribe', { method: 'POST', body: formData });
                         const data = await res.json();
-                        setInput(data.transcription);
-                    } catch (e) { console.error(e); }
+                        if (!res.ok) throw new Error(data.detail || "Transcription failed");
+                        if (typeof data.transcription === 'string') setInput(data.transcription);
+                    } catch (e) {
+                        console.error(e);
+                        alert("Couldn't transcribe that recording. Please try again or type your question.");
+                    }
                     finally { onBusyChange(false); }
                     stream.getTracks().forEach(track => track.stop());
                 };
