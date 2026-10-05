@@ -1,6 +1,6 @@
 import * as motion from 'framer-motion/client';
 import Link from 'next/link';
-import { ArrowRight, BrainCircuit, Video, BookOpen, MessageSquareText, Layers } from 'lucide-react';
+import { ArrowRight, BrainCircuit, Video, BookOpen, MessageSquareText } from 'lucide-react';
 
 export default function LandingPage() {
   const features = [

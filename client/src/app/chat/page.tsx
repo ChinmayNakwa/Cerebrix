@@ -14,6 +14,26 @@ type ChatSession = {
     timestamp: number;
 };
 
+type HistoryItem = {
+    role: 'user' | 'assistant' | 'ta';
+    content: string;
+    sources?: Message['sources'];
+};
+
+// --- Helpers ---
+const createNewSessionId = () => {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+        return `session-${crypto.randomUUID()}`;
+    }
+    return `session-${Date.now().toString(36)}`;
+};
+
+const createSession = (id: string): ChatSession => ({
+    id,
+    preview: "New Conversation",
+    timestamp: Date.now(),
+});
+
 export default function ChatPage() {
     // --- State ---
     const [messages, setMessages] = useState<Message[]>([]);
@@ -26,8 +46,38 @@ export default function ChatPage() {
     // Mirrors the active session so async responses can tell whether they are stale.
     const activeSessionRef = useRef('');
     
+    const fetchChatHistory = async (id: string) => {
+        setIsLoading(true);
+        setMessages([]); // Clear previous messages while loading
+        try {
+            const res = await fetch(`/api/py/history/${id}`);
+            if (!res.ok) throw new Error("Failed to load history");
+            
+            const data = await res.json();
+            if (activeSessionRef.current !== id) return; // user switched sessions meanwhile
+            
+            if (data.history && data.history.length > 0) {
+                const formattedMessages: Message[] = (data.history as HistoryItem[]).map((msg) => ({
+                    role: msg.role === 'user' ? 'user' : 'ta',
+                    content: msg.content,
+                    sources: msg.sources || []
+                }));
+                setMessages(formattedMessages);
+            } else {
+                setMessages([{ role: 'ta', content: "Hello! I'm **Cerebrix**, your AI tutor for Probability. How can I help you today?" }]);
+            }
+        } catch (error) {
+            console.error(error);
+            if (activeSessionRef.current !== id) return;
+            setMessages([{ role: 'ta', content: "Hello! I'm Cerebrix. (Could not load history, starting fresh)." }]);
+        } finally {
+            if (activeSessionRef.current === id) setIsLoading(false);
+        }
+    };
+
     // --- Initialization ---
     useEffect(() => {
+        /* eslint-disable react-hooks/set-state-in-effect -- localStorage/sessionStorage only exist in the browser, so state is restored after mount */
         let parsedSessions: ChatSession[] = [];
         try {
             const savedSessionsRaw = localStorage.getItem('my_chat_sessions');
@@ -45,7 +95,7 @@ export default function ChatPage() {
             sessionStorage.setItem('chatSessionId', currentId);
             
             if (!parsedSessions.find(s => s.id === currentId)) {
-                const newSession = { id: currentId, preview: "New Conversation", timestamp: Date.now() };
+                const newSession = createSession(currentId);
                 parsedSessions = [newSession, ...parsedSessions];
                 setSessions(parsedSessions);
                 localStorage.setItem('my_chat_sessions', JSON.stringify(parsedSessions));
@@ -55,50 +105,14 @@ export default function ChatPage() {
         activeSessionRef.current = currentId;
         setSessionId(currentId);
         fetchChatHistory(currentId);
+        /* eslint-enable react-hooks/set-state-in-effect */
     }, []);
-
-    // --- Helpers ---
-    const createNewSessionId = () => {
-        if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-            return `session-${crypto.randomUUID()}`;
-        }
-        return `session-${Date.now().toString(36)}`;
-    };
-
-    const fetchChatHistory = async (id: string) => {
-        setIsLoading(true);
-        setMessages([]); // Clear previous messages while loading
-        try {
-            const res = await fetch(`/api/py/history/${id}`);
-            if (!res.ok) throw new Error("Failed to load history");
-            
-            const data = await res.json();
-            if (activeSessionRef.current !== id) return; // user switched sessions meanwhile
-            
-            if (data.history && data.history.length > 0) {
-                const formattedMessages: Message[] = data.history.map((msg: any) => ({
-                    role: msg.role === 'assistant' ? 'ta' : msg.role,
-                    content: msg.content,
-                    sources: msg.sources || []
-                }));
-                setMessages(formattedMessages);
-            } else {
-                setMessages([{ role: 'ta', content: "Hello! I'm **Cerebrix**, your AI tutor for Probability. How can I help you today?" }]);
-            }
-        } catch (error) {
-            console.error(error);
-            if (activeSessionRef.current !== id) return;
-            setMessages([{ role: 'ta', content: "Hello! I'm Cerebrix. (Could not load history, starting fresh)." }]);
-        } finally {
-            if (activeSessionRef.current === id) setIsLoading(false);
-        }
-    };
 
     // --- Actions ---
 
     const handleNewChat = (existingSessions: ChatSession[] = sessions) => {
         const newId = createNewSessionId();
-        const newSession = { id: newId, preview: "New Conversation", timestamp: Date.now() };
+        const newSession = createSession(newId);
         
         const updatedSessions = [newSession, ...existingSessions];
         setSessions(updatedSessions);

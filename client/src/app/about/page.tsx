@@ -21,7 +21,7 @@ export default function AboutPage() {
         
         <div className="glass p-8 rounded-3xl mb-8 space-y-6 text-lg text-secondary leading-relaxed">
           <p>
-            While studying Stanford's CS109 on YouTube, I encountered a common frustration: 
+            While studying Stanford&apos;s CS109 on YouTube, I encountered a common frustration: 
             there was no way to discuss problems or get guidance when attempting exercises. 
             <strong> Cerebrix</strong> emerged from that need.
           </p>

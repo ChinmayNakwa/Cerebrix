@@ -56,7 +56,7 @@ export default function ChatInput({ isLoading, onSend, onBusyChange }: ChatInput
                 recorder.start();
                 mediaRecorderRef.current = recorder;
                 setIsRecording(true);
-            } catch (err) { alert("Microphone access denied."); }
+            } catch { alert("Microphone access denied."); }
         }
     };
 
