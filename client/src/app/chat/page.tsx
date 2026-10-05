@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Plus, Menu, MessageSquare, Trash2 } from 'lucide-react';
 import MessageList, { type Message } from '@/src/components/MessageList';
@@ -22,6 +22,9 @@ export default function ChatPage() {
     
     const [isLoading, setIsLoading] = useState(false);
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+
+    // Mirrors the active session so async responses can tell whether they are stale.
+    const activeSessionRef = useRef('');
     
     // --- Initialization ---
     useEffect(() => {
@@ -43,6 +46,7 @@ export default function ChatPage() {
             }
         }
         
+        activeSessionRef.current = currentId;
         setSessionId(currentId);
         fetchChatHistory(currentId);
     }, []);
@@ -63,6 +67,7 @@ export default function ChatPage() {
             if (!res.ok) throw new Error("Failed to load history");
             
             const data = await res.json();
+            if (activeSessionRef.current !== id) return; // user switched sessions meanwhile
             
             if (data.history && data.history.length > 0) {
                 const formattedMessages: Message[] = data.history.map((msg: any) => ({
@@ -76,9 +81,10 @@ export default function ChatPage() {
             }
         } catch (error) {
             console.error(error);
+            if (activeSessionRef.current !== id) return;
             setMessages([{ role: 'ta', content: "Hello! I'm Cerebrix. (Could not load history, starting fresh)." }]);
         } finally {
-            setIsLoading(false);
+            if (activeSessionRef.current === id) setIsLoading(false);
         }
     };
 
@@ -93,7 +99,9 @@ export default function ChatPage() {
         localStorage.setItem('my_chat_sessions', JSON.stringify(updatedSessions));
         
         sessionStorage.setItem('chatSessionId', newId);
+        activeSessionRef.current = newId;
         setSessionId(newId);
+        setIsLoading(false);
         setMessages([{ role: 'ta', content: "Hello! I'm **Cerebrix**. New session started. How can I help?" }]);
         
         if (window.innerWidth < 768) setIsSidebarOpen(false);
@@ -102,6 +110,7 @@ export default function ChatPage() {
     const handleSelectSession = (id: string) => {
         if (id === sessionId) return;
         sessionStorage.setItem('chatSessionId', id);
+        activeSessionRef.current = id;
         setSessionId(id);
         fetchChatHistory(id);
         if (window.innerWidth < 768) setIsSidebarOpen(false);
@@ -150,6 +159,7 @@ export default function ChatPage() {
     };
 
     const handleSend = async (userMsg: string, currentImage: File | null) => {
+        const sendId = sessionId;
         setMessages(prev => [...prev, { role: 'user', content: userMsg || "[Image Uploaded]" }]);
         updateSessionPreview(sessionId, userMsg || "Image Query");
 
@@ -168,12 +178,15 @@ export default function ChatPage() {
             const data = await res.json();
             if(!res.ok) throw new Error(data.detail || "Error");
 
+            // The answer is saved server-side, so it shows up when the user returns to that chat.
+            if (activeSessionRef.current !== sendId) return;
             setMessages(prev => [...prev, { role: 'ta', content: data.answer, sources: data.sources }]);
         } catch (error) {
             console.error(error);
+            if (activeSessionRef.current !== sendId) return;
             setMessages(prev => [...prev, { role: 'ta', content: "I'm having trouble connecting to my knowledge base." }]);
         } finally {
-            setIsLoading(false);
+            if (activeSessionRef.current === sendId) setIsLoading(false);
         }
     };
 
