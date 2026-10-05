@@ -28,8 +28,14 @@ export default function ChatPage() {
     
     // --- Initialization ---
     useEffect(() => {
-        const savedSessionsRaw = localStorage.getItem('my_chat_sessions');
-        let parsedSessions: ChatSession[] = savedSessionsRaw ? JSON.parse(savedSessionsRaw) : [];
+        let parsedSessions: ChatSession[] = [];
+        try {
+            const savedSessionsRaw = localStorage.getItem('my_chat_sessions');
+            const saved = savedSessionsRaw ? JSON.parse(savedSessionsRaw) : [];
+            if (Array.isArray(saved)) parsedSessions = saved;
+        } catch (err) {
+            console.error("Ignoring corrupt saved sessions:", err);
+        }
         setSessions(parsedSessions);
 
         let currentId = sessionStorage.getItem('chatSessionId');
