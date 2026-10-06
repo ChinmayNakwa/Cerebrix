@@ -102,6 +102,7 @@ export default function ChatPage() {
             }
         }
         
+        if (window.innerWidth < 768) setIsSidebarOpen(false); // start with the chat visible on phones
         activeSessionRef.current = currentId;
         setSessionId(currentId);
         fetchChatHistory(currentId);
@@ -211,8 +212,16 @@ export default function ChatPage() {
     };
 
     return (
-        <div className="flex h-[calc(100vh-80px)] overflow-hidden">
+        <div className="relative flex h-[calc(100vh-80px)] overflow-hidden">
             
+            {/* Tap-outside backdrop, phones only (the sidebar overlays the chat there) */}
+            {isSidebarOpen && (
+                <div
+                    className="md:hidden absolute inset-0 z-20 bg-black/60"
+                    onClick={() => setIsSidebarOpen(false)}
+                />
+            )}
+
             {/* --- LEFT SIDEBAR --- */}
             <AnimatePresence mode='wait'>
                 {isSidebarOpen && (
@@ -220,15 +229,22 @@ export default function ChatPage() {
                         initial={{ width: 0, opacity: 0 }} 
                         animate={{ width: 280, opacity: 1 }} 
                         exit={{ width: 0, opacity: 0 }}
-                        className="bg-black/20 border-r border-white/5 backdrop-blur-md flex flex-col h-full z-30 absolute md:relative"
+                        className="bg-zinc-950 md:bg-black/20 border-r border-white/5 backdrop-blur-md flex flex-col h-full z-30 absolute inset-y-0 left-0 md:relative"
                     >
-                        <div className="p-4">
+                        <div className="p-4 flex items-center gap-2">
                             <button 
                                 onClick={() => handleNewChat()}
                                 className="w-full flex items-center justify-center gap-2 bg-indigo-600/20 hover:bg-indigo-600/40 border border-indigo-500/30 text-indigo-100 p-3 rounded-xl transition-all shadow-sm"
                             >
                                 <Plus size={18} />
                                 <span className="text-sm font-medium">New Chat</span>
+                            </button>
+                            <button
+                                onClick={() => setIsSidebarOpen(false)}
+                                aria-label="Close sidebar"
+                                className="md:hidden p-3 rounded-xl text-zinc-400 hover:text-white hover:bg-white/10 transition"
+                            >
+                                <X size={18} />
                             </button>
                         </div>
 
@@ -268,9 +284,10 @@ export default function ChatPage() {
             <main className="flex-1 flex flex-col relative min-w-0">
                 
                 {/* Mobile/Sidebar Toggle Header */}
-                <div className="absolute top-4 left-4 z-20">
+                <div className={`absolute top-4 left-4 z-10 ${isSidebarOpen ? 'max-md:hidden' : ''}`}>
                      <button 
                         onClick={() => setIsSidebarOpen(!isSidebarOpen)} 
+                        aria-label={isSidebarOpen ? "Close sidebar" : "Open sidebar"}
                         className="p-2 bg-black/40 backdrop-blur-sm border border-white/10 rounded-lg text-zinc-400 hover:text-white transition"
                     >
                         {isSidebarOpen ? <X size={18} /> : <Menu size={18} />}
