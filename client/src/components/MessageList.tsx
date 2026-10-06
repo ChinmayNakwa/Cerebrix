@@ -7,13 +7,16 @@ import MathRenderer from '@/src/components/MathRenderer';
 export type Message = {
     role: 'user' | 'ta';
     content: string;
-    sources?: Array<{ location: string; url: string }>;
+    sources?: Array<{ location: string; url?: string | null }>;
 };
 
 type MessageListProps = {
     messages: Message[];
     isLoading: boolean;
 };
+
+const chipClass = "text-[10px] uppercase tracking-wide bg-black/40 px-3 py-1.5 rounded-full border border-white/10 text-zinc-400";
+const isWebUrl = (url?: string | null): url is string => !!url && /^https?:\/\//i.test(url);
 
 function MessageList({ messages, isLoading }: MessageListProps) {
     const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -40,11 +43,16 @@ function MessageList({ messages, isLoading }: MessageListProps) {
 
                         {msg.sources && msg.sources.length > 0 && (
                             <div className="mt-4 pt-3 border-t border-white/5 flex flex-wrap gap-2">
-                                {msg.sources.map((src, i) => (
-                                    <div key={i} className="text-[10px] uppercase tracking-wide bg-black/40 px-3 py-1.5 rounded-full border border-white/10 text-zinc-400">
-                                        {src.location}
-                                    </div>
-                                ))}
+                                {msg.sources.map((src, i) =>
+                                    isWebUrl(src.url) ? (
+                                        <a key={i} href={src.url} target="_blank" rel="noopener noreferrer"
+                                            className={`${chipClass} hover:text-white hover:border-indigo-500/50 transition`}>
+                                            {src.location}
+                                        </a>
+                                    ) : (
+                                        <div key={i} className={chipClass}>{src.location}</div>
+                                    )
+                                )}
                             </div>
                         )}
                     </div>
