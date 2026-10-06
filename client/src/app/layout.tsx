@@ -8,7 +8,10 @@ import Navbar from "@/src/components/Navbar";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Maths AI Tutor",
+  title: {
+    default: "Cerebrix | AI Teaching Assistant",
+    template: "%s | Cerebrix",
+  },
   description: "Advanced AI Tutor for CS109",
 };
 

@@ -1,4 +1,7 @@
+import type { Metadata } from 'next';
 import * as motion from 'framer-motion/client';
+
+export const metadata: Metadata = { title: 'Architecture' };
 
 export default function AboutPage() {
     const stack = [
