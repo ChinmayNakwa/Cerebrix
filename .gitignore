@@ -1,6 +1,7 @@
 .env
 temp_videos
 output_images
+.ingest_cache/
 *_pycache_
 ProbabilityForComputerScientists.pdf
 *.log
