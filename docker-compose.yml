@@ -1,0 +1,23 @@
+# Local Postgres with pgvector: vector store, ontology graph and LangGraph checkpoints.
+# Host port 5435 because 5432-5434 are commonly taken by other local Postgres instances.
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: maths_ta_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${PGVECTOR_USER:-mathsta}
+      POSTGRES_PASSWORD: ${PGVECTOR_PASSWORD:-mathsta}
+      POSTGRES_DB: ${PGVECTOR_DB:-mathsta}
+    ports:
+      - "127.0.0.1:${PGVECTOR_PORT:-5435}:5432"
+    volumes:
+      - maths_ta_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  maths_ta_pgdata:

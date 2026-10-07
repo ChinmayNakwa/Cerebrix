@@ -31,4 +31,13 @@ streamlit
 
 langgraph-cli[inmem]
 
+# Ingestion pipeline (local pgvector, Docling, Ollama Cloud)
+docling
+pgvector
+psycopg[binary,pool]
+ImageHash
+ollama
+langchain-ollama
+yt-dlp
+
 # conda install -c conda-forge poppler
