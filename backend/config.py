@@ -27,7 +27,8 @@ class Settings(BaseSettings):
     PDF_PATH: str = r"C:\Users\chinm\Desktop\GitHub\Maths-TA\ProbabilityForComputerScientists.pdf"
     #Field(..., env="PROBABILITY_FOR_COMPUTER_SCIENTIST_PATH")
     YOUTUBE_PLAYLIST_URL: str = "https://www.youtube.com/playlist?list=PLoROMvodv4rOpr_A7B9SriE_iZmkanvUg"
-    #Field(..., env="CS_109_PLAYLIST_URL") 
+    #Field(..., env="CS_109_PLAYLIST_URL")
+    VIDEO_DIR: str = r"C:\Users\chinm\Desktop\GitHub\Maths-TA\temp_videos"
     IMAGE_OUTPUT_DIR: str = "output_images"
 
     HF_TOKEN: str = Field(..., env="HF_TOKEN")
