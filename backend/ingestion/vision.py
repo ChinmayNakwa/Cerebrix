@@ -37,15 +37,15 @@ def read_image(client: ollama.Client, image: bytes, prompt: str) -> str:
     return _chat(client, settings.OLLAMA_VISION_MODEL, message)
 
 
-def ask(client: ollama.Client, prompt: str) -> str:
-    """Sends a text prompt to the text model and returns its answer."""
-    return _chat(client, settings.OLLAMA_TEXT_MODEL, {"role": "user", "content": prompt})
+def ask(client: ollama.Client, prompt: str, schema: dict | None = None) -> str:
+    """Sends a text prompt to the text model and returns its answer, as JSON matching schema if given."""
+    return _chat(client, settings.OLLAMA_TEXT_MODEL, {"role": "user", "content": prompt}, schema)
 
 
-def _chat(client: ollama.Client, model: str, message: dict) -> str:
+def _chat(client: ollama.Client, model: str, message: dict, schema: dict | None = None) -> str:
     for attempt in range(RETRIES + 1):
         try:
-            response = client.chat(model=model, messages=[message], options={"temperature": 0})
+            response = client.chat(model=model, messages=[message], format=schema, options={"temperature": 0})
             return response.message.content.strip()
         except Exception as e:
             if attempt == RETRIES or not _retryable(e):
