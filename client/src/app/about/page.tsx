@@ -1,5 +1,7 @@
-'use client';
-import { motion } from 'framer-motion';
+import type { Metadata } from 'next';
+import * as motion from 'framer-motion/client';
+
+export const metadata: Metadata = { title: 'Architecture' };
 
 export default function AboutPage() {
     const stack = [
@@ -22,7 +24,7 @@ export default function AboutPage() {
         
         <div className="glass p-8 rounded-3xl mb-8 space-y-6 text-lg text-secondary leading-relaxed">
           <p>
-            While studying Stanford's CS109 on YouTube, I encountered a common frustration: 
+            While studying Stanford&apos;s CS109 on YouTube, I encountered a common frustration: 
             there was no way to discuss problems or get guidance when attempting exercises. 
             <strong> Cerebrix</strong> emerged from that need.
           </p>
