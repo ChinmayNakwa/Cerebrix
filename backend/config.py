@@ -33,8 +33,8 @@ class Settings(BaseSettings):
     HF_TOKEN: str = Field(..., env="HF_TOKEN")
 
     POSTGRES_DB_URL: str = Field(..., env="POSTGRES_DB_URL")
-    # Dimension of the pgvector columns (BGE-M3 and Qwen3-Embedding-0.6B are both 1024)
-    VECTOR_DIMENSION: int = 1024
+    # Dimension of the pgvector columns (BAAI/bge-base-en-v1.5)
+    VECTOR_DIMENSION: int = 768
     INGEST_CACHE_DIR: str = ".ingest_cache"
 
 
