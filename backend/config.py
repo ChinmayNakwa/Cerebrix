@@ -36,10 +36,12 @@ class Settings(BaseSettings):
     POSTGRES_DB_URL: str = Field(..., env="POSTGRES_DB_URL")
     # Dimension of the pgvector columns (BAAI/bge-base-en-v1.5)
     VECTOR_DIMENSION: int = 768
+    VECTOR_EMBEDDING_MODEL: str = "BAAI/bge-base-en-v1.5"
     INGEST_CACHE_DIR: str = ".ingest_cache"
     OLLAMA_API_KEY: str = ""
     OLLAMA_HOST: str = "https://ollama.com"
     OLLAMA_VISION_MODEL: str = "gemma4:31b"
+    OLLAMA_TEXT_MODEL: str = "gpt-oss:120b"
 
 
     class Config:

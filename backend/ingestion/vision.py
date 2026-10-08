@@ -1,7 +1,7 @@
 # backend/ingestion/vision.py
 """
-Ollama Cloud vision calls shared by the ingestion stages. Image requests sometimes stall after a
-burst while the service stays up, so each call has a short timeout and is retried.
+Ollama Cloud calls shared by the ingestion stages. Image requests sometimes stall after a burst
+while the service stays up, so each call has a short timeout and is retried.
 """
 
 import base64
@@ -33,13 +33,19 @@ def _retryable(error: Exception) -> bool:
 
 def read_image(client: ollama.Client, image: bytes, prompt: str) -> str:
     """Sends one image with a prompt to the vision model and returns its answer."""
+    message = {"role": "user", "content": prompt, "images": [base64.b64encode(image).decode()]}
+    return _chat(client, settings.OLLAMA_VISION_MODEL, message)
+
+
+def ask(client: ollama.Client, prompt: str) -> str:
+    """Sends a text prompt to the text model and returns its answer."""
+    return _chat(client, settings.OLLAMA_TEXT_MODEL, {"role": "user", "content": prompt})
+
+
+def _chat(client: ollama.Client, model: str, message: dict) -> str:
     for attempt in range(RETRIES + 1):
         try:
-            response = client.chat(
-                model=settings.OLLAMA_VISION_MODEL,
-                messages=[{"role": "user", "content": prompt, "images": [base64.b64encode(image).decode()]}],
-                options={"temperature": 0},
-            )
+            response = client.chat(model=model, messages=[message], options={"temperature": 0})
             return response.message.content.strip()
         except Exception as e:
             if attempt == RETRIES or not _retryable(e):
