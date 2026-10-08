@@ -8,17 +8,16 @@ little text) by rendering each one to an image and asking a vision model for mar
 """
 
 import argparse
-import base64
 import hashlib
 import json
 from pathlib import Path
 
-import ollama
 import pymupdf
 
 from backend.config import settings
 from backend.ingestion.pdf_stage import SOURCE_ID, run_pdf_stage
 from backend.ingestion.runner import run_many, run_stage, stage_key
+from backend.ingestion.vision import read_image, vision_client
 
 RENDER_DPI = 150
 # Bump when the prompt changes, so cached vision pages are redone.
@@ -31,31 +30,14 @@ PROMPT = (
 )
 
 
-def _client() -> ollama.Client:
-    if not settings.OLLAMA_API_KEY:
-        raise RuntimeError("OLLAMA_API_KEY is not set")
-    return ollama.Client(host=settings.OLLAMA_HOST,
-                         headers={"Authorization": f"Bearer {settings.OLLAMA_API_KEY}"},
-                         timeout=300)
-
-
 def _render_page(pdf_path: Path, page_no: int) -> bytes:
     with pymupdf.open(pdf_path) as pdf:
         return pdf[page_no - 1].get_pixmap(dpi=RENDER_DPI).tobytes("png")
 
 
-def _transcribe(client: ollama.Client, image: bytes) -> str:
-    response = client.chat(
-        model=settings.OLLAMA_VISION_MODEL,
-        messages=[{"role": "user", "content": PROMPT, "images": [base64.b64encode(image).decode()]}],
-        options={"temperature": 0},
-    )
-    return response.message.content.strip()
-
-
 def run_vision_fallback(pdf_path: Path, pages: list[dict], max_workers: int = 3) -> dict[int, str]:
     """Transcribes the hard pages among `pages`. Returns {page_no: markdown} for those that succeeded."""
-    client = _client()
+    client = vision_client()
 
     def transcribe_page(page: dict) -> str:
         page_no = page["page"]
@@ -65,7 +47,7 @@ def run_vision_fallback(pdf_path: Path, pages: list[dict], max_workers: int = 3)
 
         def call() -> dict:
             return {"page": page_no, "model": settings.OLLAMA_VISION_MODEL,
-                    "markdown": _transcribe(client, _render_page(pdf_path, page_no))}
+                    "markdown": read_image(client, _render_page(pdf_path, page_no), PROMPT)}
 
         return run_stage(SOURCE_ID, f"pdfvision_{page_no:04d}", key, call)["markdown"]
 
