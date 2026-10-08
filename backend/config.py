@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     # Dimension of the pgvector columns (BAAI/bge-base-en-v1.5)
     VECTOR_DIMENSION: int = 768
     INGEST_CACHE_DIR: str = ".ingest_cache"
+    OLLAMA_API_KEY: str = ""
+    OLLAMA_HOST: str = "https://ollama.com"
+    OLLAMA_VISION_MODEL: str = "gemma4:31b"
 
 
     class Config:

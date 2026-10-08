@@ -85,8 +85,9 @@ def run_pdf_stage(pdf_path: Path, first_page: int | None = None, last_page: int 
 
     converter = None
     pages: list[dict] = []
-    for first in range(first_page, last_page + 1, BATCH_PAGES):
-        last = min(first + BATCH_PAGES - 1, last_page)
+    # Batches sit on a fixed grid (1-20, 21-40, ...) so a narrower request reuses cached batches.
+    for first in range(first_page - (first_page - 1) % BATCH_PAGES, last_page + 1, BATCH_PAGES):
+        last = min(first + BATCH_PAGES - 1, total_pages)
 
         def convert(first=first, last=last) -> dict:
             nonlocal converter
@@ -99,7 +100,7 @@ def run_pdf_stage(pdf_path: Path, first_page: int | None = None, last_page: int 
         key = stage_key("pdf", file=content_hash, first=first, last=last, version=PIPELINE_VERSION)
         batch = run_stage(SOURCE_ID, f"pdf_{first:04d}-{last:04d}", key, convert)
         pages.extend(batch["pages"])
-    return pages
+    return [p for p in pages if first_page <= p["page"] <= last_page]
 
 
 def main() -> None:
