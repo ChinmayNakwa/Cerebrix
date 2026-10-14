@@ -28,7 +28,8 @@ class Settings(BaseSettings):
     VECTOR_DIMENSION: int = 768
     VECTOR_EMBEDDING_MODEL: str = "BAAI/bge-base-en-v1.5"
     # Optional cross-encoder for re-ranking search hits, off by default. bge-reranker-v2-m3 would take
-    # ~35 s per query on this CPU; cross-encoder/ms-marco-MiniLM-L-6-v2 takes ~1.3 s for 20 children.
+    # ~35 s per query on this CPU; cross-encoder/ms-marco-MiniLM-L-6-v2 takes ~2 s and on the golden set
+    # (backend/core/rag/evaluate.py) lowered hit@1 from 0.76 to 0.65 and MRR from 0.84 to 0.78.
     RERANKER_MODEL: str = ""
     INGEST_CACHE_DIR: str = ".ingest_cache"
     OLLAMA_API_KEY: str = ""
