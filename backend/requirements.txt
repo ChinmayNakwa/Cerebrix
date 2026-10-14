@@ -1,31 +1,29 @@
 # Core LangChain (models are served by Ollama Cloud, see langchain-ollama below)
 langchain
+langchain-classic
 langgraph
+langgraph-checkpoint-postgres
 langsmith
 # API Framework
 fastapi
 uvicorn[standard] # For running the FastAPI server
+python-multipart  # For the Form/File uploads in /transcribe and /speak
 
 # Data Processing & Storage
 pymupdf           # Base library for PyMuPDF
-pdf2image
 sentence-transformers
-astrapy           # Direct driver for AstraDB
-langchain-astradb # LangChain integration for AstraDB
 Pillow            # For image processing
-SQLAlchemy
 
 # YouTube Processing
 youtube-transcript-api
-pytube
-opencv-python
 
 # Utilities
 python-dotenv
+pydantic-settings
+httpx
+psutil
 
 cloudinary
-
-streamlit
 
 langgraph-cli[inmem]
 
@@ -37,5 +35,12 @@ ImageHash
 ollama
 langchain-ollama
 yt-dlp
+
+# Local speech: faster-whisper for /transcribe, Kokoro for /speak
+faster-whisper==1.2.1
+av<17             # av 19 dropped the metadata_errors argument faster-whisper passes; 16.1 works
+kokoro==0.9.4
+preshed<3.0.11    # 3.0.14 breaks loading en_core_web_sm (OverflowError in the tokenizer)
+en_core_web_sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl  # Kokoro's text front end; downloaded at runtime otherwise
 
 # conda install -c conda-forge poppler
