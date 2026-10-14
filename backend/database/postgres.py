@@ -26,15 +26,5 @@ async def delete_thread_data(thread_id: str):
     """
     Deletes all checkpoint data associated with a specific thread_id.
     """
-    async with pool.connection() as conn:
-        async with conn.cursor() as cur:
-            # Delete from the main checkpoints table
-            await cur.execute(
-                "DELETE FROM checkpoints WHERE thread_id = %s", 
-                (thread_id,)
-            )
-            # Delete from the writes/blobs table
-            await cur.execute(
-                "DELETE FROM checkpoint_writes WHERE thread_id = %s", 
-                (thread_id,)
-            )
+    # Clears checkpoints, checkpoint_writes and checkpoint_blobs (where the messages themselves live)
+    await checkpointer.adelete_thread(thread_id)
