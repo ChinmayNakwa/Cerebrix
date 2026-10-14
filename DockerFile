@@ -1,23 +1,23 @@
 # --- Builder Stage ---
-FROM mambaorg/micromamba:1.5.8-debian-slim as builder
+FROM mambaorg/micromamba:1.5.8-bookworm-slim AS builder
 
 # Set working directory
 WORKDIR /app
 
 # Copy only requirements.txt first (leveraging layer cache)
-COPY requirements.txt /app/requirements.txt
+COPY backend/requirements.txt /app/requirements.txt
 
 # Create Conda environment and install both Conda + pip dependencies
 RUN micromamba create -n maths-ta python=3.12 --yes -c conda-forge \
-  && micromamba install -n maths-ta poppler ffmpeg opencv --yes -c conda-forge \
+  && micromamba install -n maths-ta ffmpeg --yes -c conda-forge \
   && micromamba run -n maths-ta pip install --no-cache-dir -r /app/requirements.txt
 
 # --- Final Image ---
-FROM mambaorg/micromamba:1.5.8-debian-slim
+FROM mambaorg/micromamba:1.5.8-bookworm-slim
 
 # Set environment variables
-ENV PYTHONDONTWRITEBYTECODE 1
-ENV PYTHONUNBUFFERED 1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
 
 # Set working directory
 WORKDIR /app

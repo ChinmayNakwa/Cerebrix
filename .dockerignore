@@ -30,3 +30,8 @@ venv/
 
 # Render or local metadata
 render.yaml
+
+# Frontend (deployed separately) and local ingestion cache
+client/
+node_modules/
+.ingest_cache/
