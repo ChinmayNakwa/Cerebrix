@@ -3,13 +3,14 @@
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+from fastapi.concurrency import run_in_threadpool
 from contextlib import asynccontextmanager
 from langchain_core.messages import HumanMessage, AIMessage
 from contextlib import asynccontextmanager
 
 from .core.schemas import AskRequest, AskResponse
 from .core.rag.agent import app_graph
-from .utils.voice_service import transcribe_audio, text_to_speech
+from .utils.voice_service import transcribe_audio, text_to_speech, load_tts
 from .database.setup_db import create_database_if_missing
 from .database.postgres import pool, checkpointer, delete_thread_data
 
@@ -212,7 +213,13 @@ async def handle_transcribe(audio_file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail="No audio file provided.")
     
     audio_bytes = await audio_file.read()
-    transcribed_text = transcribe_audio(audio_bytes)
+    try:
+        transcribed_text = await run_in_threadpool(transcribe_audio, audio_bytes)
+    except Exception as e:
+        print(f"Transcription error: {e}")
+        raise HTTPException(status_code=500, detail="Could not transcribe the audio.")
+    if not transcribed_text:
+        raise HTTPException(status_code=422, detail="No speech detected in the recording.")
     return {"transcription": transcribed_text}
 
 @app.post("/speak")
@@ -220,9 +227,15 @@ async def handle_speak(text: str = Form(...)):
     """
     Receives text, converts it to speech, and streams back the audio.
     """
-    audio_generator = text_to_speech(text)
-    # The local model generates WAV audio
-    return StreamingResponse(audio_generator, media_type="audio/wav")
+    if not text.strip():
+        raise HTTPException(status_code=400, detail="No text provided.")
+    try:
+        await run_in_threadpool(load_tts)
+    except Exception as e:
+        print(f"TTS load error: {e}")
+        raise HTTPException(status_code=500, detail="Text-to-speech is unavailable.")
+    # Local Kokoro streams 16-bit mono WAV, one segment at a time
+    return StreamingResponse(text_to_speech(text), media_type="audio/wav")
 
 @app.delete("/history/{session_id}")
 async def delete_chat_history(session_id: str):

@@ -19,7 +19,9 @@ class Settings(BaseSettings):
     #Field(..., env="CS_109_PLAYLIST_URL")
     VIDEO_DIR: str = r"C:\Users\chinm\Desktop\GitHub\Maths-TA\temp_videos"
 
-    HF_TOKEN: str = Field(..., env="HF_TOKEN")
+    # Local speech models (faster-whisper for /transcribe, Kokoro for /speak)
+    WHISPER_MODEL: str = "small.en"
+    KOKORO_VOICE: str = "af_heart"
 
     POSTGRES_DB_URL: str = Field(..., env="POSTGRES_DB_URL")
     # Dimension of the pgvector columns (BAAI/bge-base-en-v1.5)

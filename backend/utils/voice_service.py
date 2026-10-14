@@ -1,77 +1,58 @@
 # backend/utils/voice_service.py
 
-import requests
-from ..config import settings
+import io
+import struct
+from functools import lru_cache
 from typing import Iterator
-from huggingface_hub import InferenceClient
-import time
 
-HF_API_URL_STT = "https://api-inference.huggingface.co/models/openai/whisper-large-v3"
-HF_AUTH_HEADERS = {"Authorization": f"Bearer {settings.HF_TOKEN}"}
+import numpy as np
 
-print("VoiceService: Initializing Fal AI TTS client...")
-try:
-    # We use the Hugging Face token for authentication with the provider
-    tts_client = InferenceClient(
-        provider="fal-ai",
-        token=settings.HF_TOKEN,
-    )
-    print("VoiceService: Fal AI TTS client initialized successfully.")
-    TTS_CLIENT_INITIALIZED = True
-except Exception as e:
-    print(f"FATAL: Could not initialize Fal AI TTS client. Error: {e}")
-    TTS_CLIENT_INITIALIZED = False
+from ..config import settings
+
+KOKORO_SAMPLE_RATE = 24000
+
+
+@lru_cache(maxsize=1)
+def _whisper():
+    # Loaded on first use; small.en takes ~2.5 s for a 6 s clip on this CPU
+    from faster_whisper import WhisperModel
+    print(f"VoiceService: Loading Whisper model {settings.WHISPER_MODEL}...")
+    return WhisperModel(settings.WHISPER_MODEL, device="cpu", compute_type="int8")
+
+
+@lru_cache(maxsize=1)
+def _kokoro():
+    from kokoro import KPipeline
+    print("VoiceService: Loading Kokoro TTS pipeline...")
+    return KPipeline(lang_code="a", repo_id="hexgrad/Kokoro-82M")
 
 
 def transcribe_audio(audio_data: bytes) -> str:
     """
-    Sends audio data to the Hugging Face Whisper API for transcription.
-    (This function is unchanged).
+    Transcribes recorded audio (any format ffmpeg can decode, e.g. webm/opus) with local Whisper.
+    Raises on failure so the caller can return a real HTTP error.
     """
-    print("VoiceService: Transcribing audio with Whisper API...")
-    try:
-        headers = {**HF_AUTH_HEADERS, "Content-Type": "audio/webm"}
-        response = requests.post(HF_API_URL_STT, headers=headers, data=audio_data)
-        response.raise_for_status()
-        result = response.json()
-        return result.get("text", "").strip()
-    except Exception as e:
-        print(f"Whisper API Error: {e}")
-        return "Sorry, there was an error understanding speech."
+    segments, _ = _whisper().transcribe(io.BytesIO(audio_data), beam_size=1, vad_filter=True)
+    return " ".join(s.text.strip() for s in segments).strip()
+
+
+def load_tts():
+    """Loads the TTS pipeline up front, so load errors surface before the response starts."""
+    _kokoro()
+
+
+def _wav_header() -> bytes:
+    # 16-bit mono PCM with unknown length (0xFFFFFFFF sizes), so the audio can be streamed
+    return (b"RIFF" + struct.pack("<I", 0xFFFFFFFF) + b"WAVEfmt "
+            + struct.pack("<IHHIIHH", 16, 1, 1, KOKORO_SAMPLE_RATE, KOKORO_SAMPLE_RATE * 2, 2, 16)
+            + b"data" + struct.pack("<I", 0xFFFFFFFF))
 
 
 def text_to_speech(text: str) -> Iterator[bytes]:
     """
-    Generates speech using the Fal AI provider via the InferenceClient.
+    Synthesises speech with local Kokoro and streams WAV audio, one sentence-sized segment at a time.
     """
-    if not TTS_CLIENT_INITIALIZED:
-        print("VoiceService: TTS client not initialized, cannot generate speech.")
-        yield b""
-        return
-
-    print(f"VoiceService: Synthesizing speech via Fal AI for text: '{text}'")
-    
-    # Retry logic for potential transient network issues
-    max_retries = 3
-    for attempt in range(max_retries):
-        try:
-            # The client returns the raw audio bytes directly
-            audio_bytes = tts_client.text_to_speech(
-                text,
-                model="hexgrad/Kokoro-82M", # Using a high-quality, fast model on Fal
-            )
-            
-            print("VoiceService: Speech synthesis successful. Streaming to client.")
-            chunk_size = 4096
-            for i in range(0, len(audio_bytes), chunk_size):
-                yield audio_bytes[i:i+chunk_size]
-            
-            return 
-
-        except Exception as e:
-            print(f"VoiceService: Error calling Fal AI TTS (Attempt {attempt + 1}/{max_retries}): {e}")
-            if attempt < max_retries - 1:
-                time.sleep(2) # Wait 2 seconds before retrying
-            else:
-                print("VoiceService: All TTS attempts failed.")
-                yield b"" # Yield empty bytes on final failure
+    yield _wav_header()
+    for result in _kokoro()(text, voice=settings.KOKORO_VOICE):
+        audio = result.audio.numpy()
+        yield (np.clip(audio, -1, 1) * 32767).astype("<i2").tobytes()
