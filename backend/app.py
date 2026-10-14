@@ -6,7 +6,6 @@ from fastapi.responses import StreamingResponse
 from fastapi.concurrency import run_in_threadpool
 from contextlib import asynccontextmanager
 from langchain_core.messages import HumanMessage, AIMessage
-from contextlib import asynccontextmanager
 
 from .core.schemas import AskRequest, AskResponse
 from .core.rag.agent import app_graph
@@ -113,10 +112,11 @@ async def get_chat_history(session_id: str):
 
 @app.post("/ask", response_model=AskResponse)
 async def ask_question(request: AskRequest):
-    # ... (Keep your existing implementation exactly the same) ...
-    # The app_graph is already compiled with the Postgres checkpointer,
-    # so calling ainvoke automatically saves to Postgres.
-    
+    """
+    Receives a question with a session_id, invokes the LangGraph agent,
+    and returns the final answer with sources.
+    """
+    # The app_graph is compiled with the Postgres checkpointer, so ainvoke saves the turn to Postgres.
     if not request.query:
         raise HTTPException(status_code=400, detail="Query cannot be empty.")
     if not request.session_id:
@@ -153,57 +153,6 @@ async def ask_question(request: AskRequest):
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"An internal error occurred: {str(e)}")
 
-# ... (Keep /transcribe and /speak endpoints) ...
-
-# --- API Endpoints ---
-@app.get("/")
-def read_root():
-    return {"message": "Welcome to the Maths TA API"}
-
-
-@app.post("/ask", response_model=AskResponse)
-async def ask_question(request: AskRequest):
-    """
-    Receives a question with a session_id, invokes the LangGraph agent,
-    and returns the final answer with sources.
-    """
-    if not request.query:
-        raise HTTPException(status_code=400, detail="Query cannot be empty.")
-    if not request.session_id:
-        raise HTTPException(status_code=400, detail="session_id cannot be empty.")
-
-    config = {"configurable": {"thread_id": request.session_id}}
-    message_content = [{"type": "text", "text": request.query}]
-    if request.image_data:
-        message_content.append(
-            {
-                "type": "image_url",
-                "image_url": f"data:image/jpeg;base64,{request.image_data}"
-            }
-        )
-    
-    inputs = {
-        "messages": [HumanMessage(content=message_content)],
-        "query": request.query,
-        "image_data": request.image_data
-    }
-
-
-    try:
-        # Use ainvoke for async compatibility with FastAPI
-        final_state = await app_graph.ainvoke(inputs, config=config)
-    
-        
-        return AskResponse(
-            answer=final_state.get("response", "No response generated."),
-            sources=final_state.get("sources", [])
-        )
-    except Exception as e:
-        print(f"API Error: An error occurred in the /ask endpoint: {e}")
-        import traceback
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"An internal error occurred: {str(e)}")
-    
 @app.post("/transcribe")
 async def handle_transcribe(audio_file: UploadFile = File(...)):
     """
