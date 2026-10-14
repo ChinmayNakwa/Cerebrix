@@ -42,7 +42,9 @@ This project emerged from that need, creating an intelligent assistant that any 
 
 -   **Multi-Modal Knowledge Base:** Ingests and understands content from both a PDF textbook and a full YouTube video playlist.
 -   **Advanced RAG Pipeline:** Uses a sophisticated Retrieval-Augmented Generation (RAG) pipeline with metadata filtering for precise, context-aware answers.
--   **Socratic Tutoring:** When a user submits their work (via text or image), the agent analyzes their approach and provides guiding hints rather than direct answers.
+-   **Socratic Tutoring:** When a user submits their work (via text or image), the agent analyzes their approach and provides guiding hints rather than direct answers. Questions about concepts and definitions get a direct answer.
+-   **Concept Graph:** Concepts, definitions, theorems and formulas extracted from the book and lectures are linked in a graph, so answers can pull in closely related material.
+-   **Voice Input:** Questions can be spoken; they are transcribed locally.
 -   **Conversational Memory:** Remembers the context of the conversation for follow-up questions.
 -   **Powered by LangGraph:** Built on a robust, stateful agent architecture using LangGraph.
 
@@ -52,8 +54,9 @@ This project emerged from that need, creating an intelligent assistant that any 
 -   **Frontend:** A static `Nextjs` chat interface.
 -   **Database:** `PostgreSQL` with `pgvector` for the chunk embeddings, full-text search, the concept graph and chat history.
 -   **Image Hosting:** `Cloudinary` for storing page images and video keyframes.
--   **LLMs:** Google `Gemini` for reasoning, vision, and generation.
--   **Data Ingestion:** Custom Python scripts using `PyMuPDF`, `OpenCV`, and `yt-dlp` to process the knowledge sources.
+-   **LLMs:** `Ollama Cloud`, with `gpt-oss:120b` for reasoning and answers and `gemma4:31b` for reading images.
+-   **Speech:** Local `faster-whisper` for voice questions and `Kokoro` for text-to-speech.
+-   **Data Ingestion:** A staged Python pipeline (`backend/ingestion`) using `Docling` and `PyMuPDF` for the textbook, YouTube captions, `yt-dlp` and `ffmpeg` keyframes for the lectures, Ollama Cloud vision for formulas and slides, and `bge-base-en-v1.5` embeddings.
 
 ---
 
@@ -66,8 +69,10 @@ Follow these steps to set up and run the Maths AI Tutor on your local machine.
 ### 1. Prerequisites
 
 -   [Anaconda or Miniconda](https://www.anaconda.com/download) installed.
+-   [Docker](https://www.docker.com/products/docker-desktop/) for the local PostgreSQL database.
+-   [Node.js](https://nodejs.org/) for the frontend.
 -   Access keys for:
-    -   Google AI (Gemini)
+    -   Ollama Cloud
     -   Cloudinary
     -   LangSmith (optional, but highly recommended for debugging)
 
@@ -84,12 +89,50 @@ cd Cerebrix
 conda create --name cerebrix python=3.12
 conda activate cerebrix
 
-# Or install them one by one:
-conda install -c conda-forge poppler ffmpeg opencv
+# Install ffmpeg (used by the video ingestion stage)
+conda install -c conda-forge ffmpeg
 
 # Install Python packages using pip
-pip install -r requirements.txt
+pip install -r backend/requirements.txt
 
+```
+
+### 3. Configuration
+
+Copy `.env.example` to `.env` and fill in the keys. With the database from the next step, `POSTGRES_DB_URL` is `postgresql://mathsta:mathsta@127.0.0.1:5435/mathsta` (use `127.0.0.1`, not `localhost`). Also set `PDF_PATH` to the textbook PDF and `VIDEO_DIR` to a folder holding the lecture videos as `.mp4` files named after their YouTube titles.
+
+### 4. Database
+
+```bash
+docker compose up -d
+python -m backend.database.schema
+```
+
+### 5. Ingest the Course
+
+Each stage caches its results in `.ingest_cache/`, so a rerun only redoes what changed.
+
+```bash
+python -m backend.ingestion.pdf_stage                 # textbook pages with Docling
+python -m backend.ingestion.pdf_vision                # formulas Docling could not read
+python -m backend.ingestion.video_stage               # captions and slides for each lecture
+python -m backend.ingestion.chunk_stage --book --lectures
+python -m backend.ingestion.ontology_stage            # concept graph
+
+# Optional: measure retrieval on the golden question set
+python -m backend.core.rag.evaluate
+```
+
+### 6. Run
+
+```bash
+# Backend on port 8000
+uvicorn backend.app:app --port 8000
+
+# Frontend on port 3000 (proxies /api/py to API_URL, default http://127.0.0.1:8000)
+cd client
+npm install
+npm run dev
 ```
 
 ## 🤝 Contributing
@@ -102,7 +145,7 @@ Contributions are welcome! Please feel free to submit a Pull Request. For major 
 
 *   Stanford CS109 course materials
 *   LangChain and LangGraph teams
-*   Google Gemini AI
+*   Ollama
 *   The open-source community
 
 ---
@@ -132,8 +175,5 @@ This project is designed as an educational tool to enhance learning from publicl
 
 If you are a content owner and have concerns about this project's use of your materials, please contact `29chinmaynakwa@gmail.com` and we will respond promptly.
 
-**For other users replicating this project**: Please ensure you have appropriate permissions for any copyrighted materials you process. Fair use determinations are made on a case-by-case basis# Cerebrix 🧠🤖
+**For other users replicating this project**: Please ensure you have appropriate permissions for any copyrighted materials you process. Fair use determinations are made on a case-by-case basis.
 
-Your AI teaching assistant for YouTube courses, combining video lectures, textbooks, and Socratic tutoring in one conversational interface.
-
----
