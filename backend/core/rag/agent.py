@@ -155,10 +155,16 @@ class SearchFilters(BaseModel):
 
 class Reflection(BaseModel):
     """The model's reflection on its own generated answer."""
-    is_socratic: bool = Field(description="True if the answer uses the Socratic method by asking guiding questions rather than giving a direct solution. False otherwise.")
+    follows_style: bool = Field(description="True if the answer follows the style rule (rule 1). False otherwise.")
     is_safe: bool = Field(description="True if the answer is safe, respectful, and on-topic. False if it's harmful or inappropriate.")
-    is_final_answer: bool = Field(description="True if the answer is good enough to send to the user. This should be True only if is_socratic and is_safe are both True.")
+    is_final_answer: bool = Field(description="True if the answer is good enough to send to the user. This should be True only if follows_style and is_safe are both True.")
     feedback_for_improvement: str = Field(description="Constructive feedback for regenerating the answer if is_final_answer is False. Explain what was wrong (e.g., 'The answer was too direct. Rephrase it as a question that guides the student.').")
+
+# Rule 1 of the reflection check: questions about concepts get a direct answer, problems get Socratic hints
+STYLE_RULES = {
+    "rag": "**Must be a direct answer:** It must answer the student's question directly and clearly, without turning it into a guiding question or ending with a Socratic follow-up question.",
+    "critique": "**Must be Socratic:** It must ask guiding questions, not give direct answers or solve the problem.",
+}
 
 # --- GRAPH STATE ---
 
@@ -252,7 +258,12 @@ class TutorAgent:
              # The existing logic is fine for the first turn.
              try:
                 prompt = ChatPromptTemplate.from_messages([
-                    ("system", """You are an expert at routing the FIRST user question... (Your existing 'clarify' prompt)"""),
+                    ("system", """You route a student's FIRST message to a probability and statistics Teaching Assistant for Stanford CS109 (the course book and its lectures).
+                    Choose one route:
+                    - 'rag': questions about concepts, definitions, formulas, theorems or course material, e.g. "what is a p-value?", "explain the central limit theorem", "what does lecture 4 cover?", "what is on page 61?".
+                    - 'critique': the student wants help with a specific problem or with their own work, e.g. "how do I find P(X > 3) for X ~ Poisson(2)?", "is my answer to this exercise right?", "I got 0.4 here, where did I go wrong?".
+                    - 'clarify': only when the message cannot be acted on at all, e.g. "help", "this one?" or "I don't get it" with nothing else. Then put one short question in clarifying_question asking what they need.
+                    When unsure between 'rag' and 'critique', pick 'rag' for questions about what something is and 'critique' for questions that ask to solve something."""),
                     ("human", "User question: {question}")
                 ])
                 chain = prompt | self.router_chain
@@ -270,7 +281,7 @@ class TutorAgent:
             Analyze the conversation history, then decide the route for the NEWEST message.
 
             - If the user's new message is an answer to the TA's last question (like '5 times' or 'yes'), continue the previous path. Check the TA's last message to see what the likely path was (e.g., if the TA asked a socratic question, the route is 'critique').
-            - If the user asks a NEW general question (e.g., "what is a p-value?"), route to 'rag'.
+            - If the user asks a NEW general or definitional question (e.g., "what is a p-value?"), route to 'rag'.
             - If the user provides a NEW problem to solve, route to 'critique'.
             - If the user's new message is genuinely ambiguous even with history, route to 'clarify'.
 
@@ -322,7 +333,7 @@ class TutorAgent:
             # --- 2. Generation Step ---
             system_prompt = """You are a teaching assistant at Stanford in probability and statistics. You must answer the user's question based *only* on the provided context.
                 Use the conversation history to understand the user's query in a broader context, but formulate the final answer based on the new context provided below.
-                Crucially, you MUST use the Socratic method: do not give direct answers, but ask guiding questions to help the student think for themselves.
+                Answer directly and clearly: for definitions and conceptual questions, give the definition or explanation itself (with the formula where relevant). Do not turn the answer into a guiding question and do not end with a Socratic follow-up question.
                 If the context is insufficient, state that you cannot answer from the given information."""
 
             if feedback:
@@ -544,11 +555,12 @@ class TutorAgent:
         """
         print("---NODE: REFLECT ON ANSWER---")
         response_to_check = state["response"]
-        
+        style_rule = STYLE_RULES.get(state.get("route"), STYLE_RULES["critique"])
+
         system_prompt = """You are a Quality Control Inspector for an AI Teaching Assistant. Your task is to evaluate a generated response against strict criteria.
-        
+
         The TA's rules are:
-        1.  **Must be Socratic:** It must ask guiding questions, not give direct answers or solve the problem.
+        1.  {style_rule}
         2.  **Must be Safe and Respectful:** It must not contain any harmful, inappropriate, or off-topic content.
 
         Analyze the following response and determine if it follows ALL rules.
@@ -560,7 +572,7 @@ class TutorAgent:
         
         try:
             chain = prompt | self.reflection_chain
-            reflection_result = chain.invoke({"response_to_check": response_to_check})
+            reflection_result = chain.invoke({"response_to_check": response_to_check, "style_rule": style_rule})
             
             print(f"  - Reflection Result: Is Final? {reflection_result.is_final_answer}")
             if not reflection_result.is_final_answer:
