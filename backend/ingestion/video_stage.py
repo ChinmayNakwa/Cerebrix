@@ -50,7 +50,7 @@ SLIDE_MIN_FLAT = 0.4
 CHANGE_LEVEL = 24
 CONTAINED = 0.1
 # Bump when the frame selection changes, so cached slide sets are redone.
-FRAMES_VERSION = "v1"
+FRAMES_VERSION = "v2"
 CLOUDINARY_FOLDER = "maths_ta/frames"
 # Bump when the prompt changes, so cached slide transcriptions are redone.
 PROMPT_VERSION = "v1"
@@ -103,19 +103,26 @@ def _fetch_captions(video_id: str) -> dict:
     }
 
 
-def _keyframe_times(video: Path) -> list[float]:
-    """Timestamps of the keyframes, read from the packet flags without decoding any video."""
-    probe = subprocess.run(
-        ["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "packet=pts_time,flags",
-         "-of", "csv=p=0", str(video)],
-        capture_output=True, text=True, check=True,
+def _extract_keyframes(video: Path, folder: Path) -> tuple[list[float], list[Path]]:
+    """
+    Saves every keyframe as a JPEG in folder and returns their timestamps and files, in time order.
+    Each file's timestamp comes from showinfo in the same run, since some lectures have bursts of
+    keyframes a frame apart that come out of the decoder slightly out of order.
+    """
+    # -discard nokey drops packets in the demuxer, so it works for VP9 too (-skip_frame nokey does not).
+    # -copyts keeps the video's own timeline, which the YouTube links use.
+    run = subprocess.run(
+        ["ffmpeg", "-hide_banner", "-nostats", "-loglevel", "info", "-y", "-copyts", "-discard", "nokey",
+         "-i", str(video), "-vf", f"scale={FRAME_WIDTH}:-2,showinfo", "-fps_mode", "passthrough", "-q:v", "3",
+         str(folder / "f_%05d.jpg")],
+        check=True, capture_output=True, text=True, encoding="utf-8", errors="replace",
     )
-    times = []
-    for line in probe.stdout.splitlines():
-        pts, _, flags = line.partition(",")
-        if "K" in flags and pts != "N/A":
-            times.append(float(pts))
-    return sorted(times)
+    times = [float(t) for t in re.findall(r"\] n:\s*\d+ pts:\s*-?\d+ pts_time:(-?[\d.]+)", run.stderr)]
+    frames = sorted(folder.glob("f_*.jpg"))
+    if len(frames) != len(times):
+        raise RuntimeError(f"{video.name}: {len(frames)} frames written but {len(times)} timestamps logged")
+    ordered = sorted(zip(times, frames))
+    return [t for t, _ in ordered], [frame for _, frame in ordered]
 
 
 def _is_slide(image: Image.Image) -> bool:
@@ -160,7 +167,7 @@ def _is_crossfade(before: np.ndarray, frame: np.ndarray, after: np.ndarray) -> b
 
 def _spans(seen: list[int], times: list[float]) -> list[list[float]]:
     """Turns the keyframe indexes a slide was seen at into [start, end] stretches of screen time."""
-    step = times[-1] - times[-2]
+    step = float(np.median(np.diff(times)))  # the last gaps can be a frame long
     spans: list[list[float]] = []
     for index in seen:
         end = times[index + 1] if index + 1 < len(times) else times[index] + step
@@ -173,19 +180,8 @@ def _spans(seen: list[int], times: list[float]) -> list[list[float]]:
 
 def _select_slides(video: Path, folder: Path) -> dict:
     """Extracts the keyframes, keeps the slide captures and saves one image per distinct slide in folder."""
-    times = _keyframe_times(video)
-
     with tempfile.TemporaryDirectory() as tmp:
-        # -discard nokey drops packets in the demuxer, so it works for VP9 too (-skip_frame nokey does not).
-        subprocess.run(
-            ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-discard", "nokey", "-i", str(video),
-             "-vf", f"scale={FRAME_WIDTH}:-2", "-fps_mode", "vfr", "-q:v", "3", str(Path(tmp) / "f_%05d.jpg")],
-            check=True, capture_output=True,
-        )
-        frames = sorted(Path(tmp).glob("f_*.jpg"))
-        if len(frames) != len(times):
-            raise RuntimeError(f"{video.name}: {len(frames)} frames extracted for {len(times)} keyframes")
-
+        times, frames = _extract_keyframes(video, Path(tmp))
         greys, is_slide = zip(*(_thumbnail(frame) for frame in frames))
 
         slides: list[dict] = []
