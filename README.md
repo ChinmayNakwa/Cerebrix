@@ -50,8 +50,7 @@ This project emerged from that need, creating an intelligent assistant that any 
 
 -   **Backend:** A `FastAPI` server running a `LangGraph` agent.
 -   **Frontend:** A static `Nextjs` chat interface.
--   **Vector Database:** `AstraDB` for storing and retrieving text and metadata embeddings.
--   **Database:** `PostgreSQL` for storing chat history.
+-   **Database:** `PostgreSQL` with `pgvector` for the chunk embeddings, full-text search, the concept graph and chat history.
 -   **Image Hosting:** `Cloudinary` for storing page images and video keyframes.
 -   **LLMs:** Google `Gemini` for reasoning, vision, and generation.
 -   **Data Ingestion:** Custom Python scripts using `PyMuPDF`, `OpenCV`, and `yt-dlp` to process the knowledge sources.
@@ -69,7 +68,6 @@ Follow these steps to set up and run the Maths AI Tutor on your local machine.
 -   [Anaconda or Miniconda](https://www.anaconda.com/download) installed.
 -   Access keys for:
     -   Google AI (Gemini)
-    -   AstraDB
     -   Cloudinary
     -   LangSmith (optional, but highly recommended for debugging)
 

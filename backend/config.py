@@ -8,10 +8,6 @@ load_dotenv()
 class Settings(BaseSettings):
     GOOGLE_API_KEY: str = Field(..., env="GOOGLE_API_KEY")
 
-    ASTRA_DB_API_ENDPOINT: str = Field(..., env="ASTRA_DB_API_ENDPOINT")
-    ASTRA_DB_APPLICATION_TOKEN: str = Field(..., env="ASTRA_DB_APPLICATION_TOKEN")
-    ASTRA_DB_KEYSPACE: str = Field(..., env="ASTRA_DB_KEYSPACE") 
-    ASTRA_DB_COLLECTION_NAME: str = Field(..., env="ASTRA_DB_COLLECTION_NAME")
     LANGSMITH_API_KEY: str = Field(..., env="LANGSMITH_API_KEY")
     LANGSMITH_PROJECT: str = Field("Maths-TA", env="LANGSMITH_PROJECT")
 
@@ -19,17 +15,11 @@ class Settings(BaseSettings):
     CLOUDINARY_API_KEY: str = Field(..., env="CLOUDINARY_API_KEY")
     CLOUDINARY_API_SECRET: str = Field(..., env="CLOUDINARY_API_SECRET")
 
-    EMBEDDING_MODEL: str = Field("all-MiniLM-L12-v2")
-    EMBEDDING_DIMENSION: int = 384
-
-    CHUNK_SIZE: int = 1000         
-    CHUNK_OVERLAP: int = 150
     PDF_PATH: str = r"C:\Users\chinm\Desktop\GitHub\Maths-TA\ProbabilityForComputerScientists.pdf"
     #Field(..., env="PROBABILITY_FOR_COMPUTER_SCIENTIST_PATH")
     YOUTUBE_PLAYLIST_URL: str = "https://www.youtube.com/playlist?list=PLoROMvodv4rOpr_A7B9SriE_iZmkanvUg"
     #Field(..., env="CS_109_PLAYLIST_URL")
     VIDEO_DIR: str = r"C:\Users\chinm\Desktop\GitHub\Maths-TA\temp_videos"
-    IMAGE_OUTPUT_DIR: str = "output_images"
 
     HF_TOKEN: str = Field(..., env="HF_TOKEN")
 

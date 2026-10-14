@@ -77,7 +77,7 @@ def find_lectures() -> list[dict]:
 
     lectures = []
     for entry in entries:
-        # download_videos.py saved each file under its title with these characters removed.
+        # The lecture files were downloaded under their titles with these characters removed.
         path = Path(settings.VIDEO_DIR) / (re.sub(r'[\\/*?:"<>|]', "", entry["title"]).strip() + ".mp4")
         number = re.search(r"Lecture (\d+)\s*$", entry["title"])
         if not (path.exists() and number):
