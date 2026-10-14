@@ -146,7 +146,7 @@ _INVERSE_RELATIONS = {"used_in": ("uses", True), "defines": ("defined_in", True)
 
 def _parse(answer: str) -> dict:
     # Ollama Cloud does not enforce the format schema: it wraps the JSON in a ``` fence, sometimes leaves
-    # LaTeX backslashes unescaped and invents relation types, so all three are repaired here.
+    # LaTeX backslashes unescaped, writes null aliases and invents relation types, so all are repaired here.
     answer = re.sub(r"^```(?:json)?\s*|\s*```$", "", answer.strip())
     try:
         data = json.loads(answer)
@@ -159,7 +159,8 @@ def _parse(answer: str) -> dict:
         if relation_type in EdgeType.__args__ and source and target:
             relations.append({"source": target if swap else source, "type": relation_type,
                               "target": source if swap else target})
-    return Extraction.model_validate({**data, "relations": relations}).model_dump()
+    entities = [{**entity, "aliases": entity.get("aliases") or []} for entity in data.get("entities", [])]
+    return Extraction.model_validate({**data, "entities": entities, "relations": relations}).model_dump()
 
 
 def extract(parents: list[dict]) -> int:
