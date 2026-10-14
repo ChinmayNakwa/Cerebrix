@@ -37,6 +37,9 @@ class Settings(BaseSettings):
     # Dimension of the pgvector columns (BAAI/bge-base-en-v1.5)
     VECTOR_DIMENSION: int = 768
     VECTOR_EMBEDDING_MODEL: str = "BAAI/bge-base-en-v1.5"
+    # Optional cross-encoder for re-ranking search hits, off by default. bge-reranker-v2-m3 would take
+    # ~35 s per query on this CPU; cross-encoder/ms-marco-MiniLM-L-6-v2 takes ~1.3 s for 20 children.
+    RERANKER_MODEL: str = ""
     INGEST_CACHE_DIR: str = ".ingest_cache"
     OLLAMA_API_KEY: str = ""
     OLLAMA_HOST: str = "https://ollama.com"
