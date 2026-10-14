@@ -15,7 +15,6 @@ import json
 import os
 import re
 from langchain_core.messages import AIMessage, HumanMessage
-from backend.database.astra_db_connection import get_vector_store
 from backend.core.schemas import SourceDocument
 from backend.config import settings
 from langchain_classic.docstore.document import Document
@@ -28,6 +27,17 @@ os.environ["LANGCHAIN_PROJECT"] = os.getenv("LANGSMITH_PROJECT", settings.LANGSM
 
 # --- HELPER FUNCTIONS ---
 
+def _timestamp(seconds) -> str:
+    h, m = divmod(int(seconds or 0), 3600)
+    m, s = divmod(m, 60)
+    return f"{h:02d}:{m:02d}:{s:02d}"
+
+
+def _pages(doc: Document) -> str:
+    start, end = doc.metadata.get('page_start'), doc.metadata.get('page_end')
+    return f"Page {start}" if start == end else f"Pages {start}-{end}"
+
+
 def _format_docs(docs: List[Document]) -> str:
     """
     Prepares the retrieved documents for insertion into the prompt.
@@ -37,32 +47,26 @@ def _format_docs(docs: List[Document]) -> str:
         return "No context was retrieved from the knowledge base."
 
     formatted_docs = []
-    image_urls = set()
+    image_urls = []
 
-    for i, doc in enumerate(docs):
-        source_name = doc.metadata.get('source', 'unknown')
-        location_text = f"Source {i+1}"
-
-        if source_name in ["book", "PROBABILITY_FOR_COMPUTER_SCIENTIST"]:
-            page_num = doc.metadata.get('page_number', 'N/A')
-            location_text = f"Context from Book (Page {page_num})"
-        elif source_name == "video":
+    for doc in docs:
+        if doc.metadata.get('source') == "video":
             title = doc.metadata.get('title', 'N/A')
-            try:
-                ss = int(doc.metadata.get('start_time_sec', 0))
-                h, m = divmod(ss, 3600)
-                m, s = divmod(m, 60)
-                timestamp = f"{h:02d}:{m:02d}:{s:02d}"
-                location_text = f"Context from Video '{title}' (at {timestamp})"
-            except (ValueError, TypeError):
-                location_text = f"Context from Video '{title}'"
+            location_text = f"Context from Video '{title}' (at {_timestamp(doc.metadata.get('start_sec'))})"
+        else:
+            section = doc.metadata.get('section') or 'Book'
+            location_text = f"Context from Book, {section} ({_pages(doc)})"
+        # Chunks reached through the concept graph are background on a related idea, not a direct match.
+        if doc.metadata.get('retrieved_by') == "graph":
+            location_text += f" [related concept: {doc.metadata.get('graph_node')}]"
 
         doc_string = f"--- {location_text} ---\n{doc.page_content}"
         formatted_docs.append(doc_string)
 
-        # Collect image URLs
-        if doc.metadata.get("image_path"):
-            image_urls.add(doc.metadata.get("image_path"))
+        # Collect the slide images shown during a lecture excerpt
+        for url in doc.metadata.get("image_urls") or []:
+            if url not in image_urls:
+                image_urls.append(url)
 
     final_context_str = "\n\n".join(formatted_docs)
     
@@ -77,62 +81,25 @@ def _format_docs(docs: List[Document]) -> str:
 def _get_sources(docs: List[Document]) -> List[SourceDocument]:
     """
     Creates a list of SourceDocument objects from the retrieved docs.
-    Enhanced version with better source handling.
+    Video sources link to the moment in the lecture; book sources give the page range.
     """
     sources = []
     unique_sources = set()
 
     for doc in docs:
-        source_name = doc.metadata.get('source', 'unknown')
-        source_type = 'unknown'
-        location = 'Unknown'
-        url = None
-        source_key = None
-        
-        if source_name in ["book", "PROBABILITY_FOR_COMPUTER_SCIENTIST"]:
-            source_type = 'book'
-            page_num = doc.metadata.get('page_number', 'N/A')
-            location = f"Page {page_num}"
-            url = doc.metadata.get("image_path")
-            source_key = f"book_page_{page_num}"
-            
-        elif source_name == 'video':
-            source_type = 'video'
+        if doc.metadata.get('source') == 'video':
             title = doc.metadata.get('title', 'N/A')
-            url = doc.metadata.get("video_url")
-            try:
-                ss = int(doc.metadata.get('start_time_sec', 0))
-                h, m = divmod(ss, 3600)
-                m, s = divmod(m, 60)
-                timestamp = f"{h:02d}:{m:02d}:{s:02d}"
-                location = f"'{title}' at {timestamp}"
-            except (ValueError, TypeError):
-                location = f"'{title}'"
-            source_key = f"video_{doc.metadata.get('video_id')}"
+            source = SourceDocument(source_type='video',
+                                    location=f"'{title}' at {_timestamp(doc.metadata.get('start_sec'))}",
+                                    url=doc.metadata.get("video_url"))
+        else:
+            source = SourceDocument(source_type='book', location=_pages(doc))
 
-        if source_key and source_key not in unique_sources:
-            sources.append(SourceDocument(source_type=source_type, location=location, url=url))
-            unique_sources.add(source_key)
+        if source.location not in unique_sources:
+            sources.append(source)
+            unique_sources.add(source.location)
             
     return sources
-
-
-def _filter_docs_by_title(docs: List[Document], title_keyword: str) -> List[Document]:
-    """
-    Client-side filtering for title keywords since Astra DB doesn't support regex.
-    """
-    if not title_keyword:
-        return docs
-    
-    filtered_docs = []
-    title_lower = title_keyword.lower()
-    
-    for doc in docs:
-        doc_title = doc.metadata.get('title', '').lower()
-        if title_lower in doc_title:
-            filtered_docs.append(doc)
-    
-    return filtered_docs
 
 
 # --- PYDANTIC MODELS ---
@@ -321,25 +288,8 @@ class TutorAgent:
 
         try:
             # --- 1. Retrieval Step ---
-            astra_filter = {}
-            title_keyword = None
-            if "page_number" in filters:
-                astra_filter["page_number"] = filters["page_number"]
-            if "title_keyword" in filters:
-                title_keyword = filters["title_keyword"]
-
-            print(f"Retrieving context for query: '{query}' with DB filter: {astra_filter}")
-            search_kwargs = {"k": 10}  # Get more docs for potential client-side filtering
-            if astra_filter:
-                search_kwargs["filter"] = astra_filter
-
-            retriever = self.rag_manager.vector_store.as_retriever(search_kwargs=search_kwargs)
-            docs = retriever.invoke(query)
-
-            if title_keyword:
-                docs = _filter_docs_by_title(docs, title_keyword)
-
-            docs = docs[:5]  # Limit to top 5 after all filtering
+            # Page and lecture filters are applied in the database search itself.
+            docs = self.rag_manager.retrieve_context(query, filters, k=5)
             sources = _get_sources(docs)
             context_str = _format_docs(docs)
 
@@ -469,27 +419,7 @@ class TutorAgent:
         
         try:
             filters = state.get("filters", {})
-            astra_filter = {}
-            title_keyword = None
-            
-            if "page_number" in filters: 
-                astra_filter["page_number"] = filters["page_number"]
-            if "title_keyword" in filters:
-                title_keyword = filters["title_keyword"]
-
-            print(f"Retrieving context for query: '{critique_search_query}' with DB filter: {astra_filter}")
-            
-            search_kwargs = {"k": 6}
-            if astra_filter:
-                search_kwargs["filter"] = astra_filter
-            
-            retriever = self.rag_manager.vector_store.as_retriever(search_kwargs=search_kwargs)
-            docs = retriever.invoke(critique_search_query)
-            
-            if title_keyword:
-                docs = _filter_docs_by_title(docs, title_keyword)
-            
-            docs = docs[:3]
+            docs = self.rag_manager.retrieve_context(critique_search_query, filters, k=3)
             sources = _get_sources(docs)
             return {"context": docs, "sources": sources}
             
@@ -764,4 +694,4 @@ memory = MemorySaver()
 # Compile the graph
 app_graph = workflow.compile(checkpointer=checkpointer)
 # app_graph = workflow.compile()
-print("Combined LangGraph agent compiled successfully with memory, Astra DB compatible filtering, intelligent routing, and robust error handling.")
+print("Combined LangGraph agent compiled successfully with memory, Postgres hybrid retrieval, intelligent routing, and robust error handling.")
