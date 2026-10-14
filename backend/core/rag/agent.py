@@ -1,9 +1,10 @@
 # backend/core/rag/agent.py
 
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain_core.output_parsers import StrOutputParser, JsonOutputParser
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_core.runnables import RunnableParallel, RunnablePassthrough
+from langchain_core.output_parsers import StrOutputParser, JsonOutputParser, PydanticOutputParser
+from langchain_core.exceptions import OutputParserException
+from langchain_ollama import ChatOllama
+from langchain_core.runnables import RunnableLambda, RunnableParallel, RunnablePassthrough
 from typing import List, Dict, Any, TypedDict, Optional, Annotated
 from langgraph.graph.message import add_messages
 from langgraph.graph import StateGraph, END
@@ -14,7 +15,7 @@ import operator
 import json
 import os
 import re
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from backend.core.schemas import SourceDocument
 from backend.config import settings
 from langchain_classic.docstore.document import Document
@@ -102,6 +103,38 @@ def _get_sources(docs: List[Document]) -> List[SourceDocument]:
     return sources
 
 
+def _ollama(model: str, temperature: float) -> ChatOllama:
+    return ChatOllama(model=model, temperature=temperature, base_url=settings.OLLAMA_HOST,
+                      client_kwargs={"headers": {"Authorization": f"Bearer {settings.OLLAMA_API_KEY}"},
+                                     "timeout": 120})
+
+
+def _text_only(messages: list) -> list:
+    """The chat history without image blocks, for the text model; the vision node has already transcribed them."""
+    cleaned = []
+    for message in messages:
+        if isinstance(message.content, list):
+            parts = [part.get("text", "") if part.get("type") == "text" else "[image attached]"
+                     for part in message.content if isinstance(part, dict)]
+            message = message.model_copy(update={"content": "\n".join(part for part in parts if part)})
+        cleaned.append(message)
+    return cleaned
+
+
+def _structured(model: ChatOllama, schema: type[BaseModel]):
+    """
+    Like model.with_structured_output(schema), for Ollama Cloud, which ignores the JSON schema it is sent:
+    the schema goes into the prompt instead, and a reply that does not parse is asked for once more.
+    """
+    parser = PydanticOutputParser(pydantic_object=schema)
+    instructions = SystemMessage(content=parser.get_format_instructions())
+
+    def run(prompt_value):
+        return parser.invoke(model.invoke([instructions, *prompt_value.to_messages()]))
+
+    return RunnableLambda(run).with_retry(retry_if_exception_type=(OutputParserException,), stop_after_attempt=2)
+
+
 # --- PYDANTIC MODELS ---
 
 class Critique(BaseModel):
@@ -152,22 +185,15 @@ class GraphState(TypedDict):
 class TutorAgent:
     def __init__(self):
         self.rag_manager = RAGManager()
-        # Use updated models with appropriate temperatures
-        self.vision_model = ChatGoogleGenerativeAI(
-            model="gemini-2.5-flash-lite", 
-            temperature=0, 
-            api_key=settings.GOOGLE_API_KEY
-        )
-        self.reasoning_model = ChatGoogleGenerativeAI(
-            model="gemini-2.5-flash-lite", 
-            temperature=1, 
-            api_key=settings.GOOGLE_API_KEY
-        )
-        # Create structured output chains
-        self.filter_extraction_model = self.reasoning_model.with_structured_output(SearchFilters)
-        self.router_chain = self.reasoning_model.with_structured_output(RoutingDecision)
-        self.critique_chain = self.reasoning_model.with_structured_output(Critique)
-        self.reflection_chain = self.reasoning_model.with_structured_output(Reflection)
+        # Ollama Cloud models: a multimodal one for images, a text one for everything else
+        self.vision_model = _ollama(settings.OLLAMA_VISION_MODEL, temperature=0)
+        self.reasoning_model = _ollama(settings.OLLAMA_TEXT_MODEL, temperature=1)
+        # Create structured output chains, at temperature 0 so the JSON stays on schema
+        structured_model = _ollama(settings.OLLAMA_TEXT_MODEL, temperature=0)
+        self.filter_extraction_model = _structured(structured_model, SearchFilters)
+        self.router_chain = _structured(structured_model, RoutingDecision)
+        self.critique_chain = _structured(structured_model, Critique)
+        self.reflection_chain = _structured(structured_model, Reflection)
         print("TutorAgent: Initialized successfully.")
 
     # def prepare_inputs(self, state: GraphState) -> dict:
@@ -258,7 +284,7 @@ class TutorAgent:
             chain = prompt | self.router_chain
 
             # Pass the entire message history to the chain
-            result = chain.invoke({"chat_history": messages})
+            result = chain.invoke({"chat_history": _text_only(messages)})
 
             print(f"Conversational routing decision: {result.route}")
             return {
@@ -314,7 +340,7 @@ class TutorAgent:
             answer = chain.invoke({
                 "context": context_str,
                 "question": query,
-                "chat_history": messages
+                "chat_history": _text_only(messages)
             })
 
             # --- 3. Output Preparation ---
@@ -350,12 +376,12 @@ class TutorAgent:
         
         try:
             print("Transcribing image...")
-            prompt = [
+            prompt = HumanMessage(content=[
                 {"type": "text", "text": "Transcribe the student's handwritten math work from this image."},
                 {"type": "image_url", "image_url": f"data:image/jpeg;base64,{image_data}"}
-            ]
-            
-            response = self.vision_model.invoke(prompt)
+            ])
+
+            response = self.vision_model.invoke([prompt])
             transcribed_work = response.content
             print(f"Transcribed Work: {transcribed_work}")
             return {"transcribed_work": transcribed_work}
@@ -473,7 +499,7 @@ class TutorAgent:
             # --- 2. Generation Step ---
             chain = prompt_template | self.reasoning_model | StrOutputParser()
             response = chain.invoke({
-                "chat_history": messages,
+                "chat_history": _text_only(messages),
                 "question": query,
                 "work": transcribed_work,
                 "critique": critique,

@@ -1,9 +1,7 @@
-# Core LangChain & Google
+# Core LangChain (models are served by Ollama Cloud, see langchain-ollama below)
 langchain
 langgraph
 langsmith
-langchain-google-genai
-google-genai
 # API Framework
 fastapi
 uvicorn[standard] # For running the FastAPI server

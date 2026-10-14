@@ -6,8 +6,6 @@ from typing import Optional
 load_dotenv()
 
 class Settings(BaseSettings):
-    GOOGLE_API_KEY: str = Field(..., env="GOOGLE_API_KEY")
-
     LANGSMITH_API_KEY: str = Field(..., env="LANGSMITH_API_KEY")
     LANGSMITH_PROJECT: str = Field("Maths-TA", env="LANGSMITH_PROJECT")
 
