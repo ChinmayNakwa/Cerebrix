@@ -161,6 +161,9 @@ class Reflection(BaseModel):
     feedback_for_improvement: str = Field(description="Constructive feedback for regenerating the answer if is_final_answer is False. Explain what was wrong (e.g., 'The answer was too direct. Rephrase it as a question that guides the student.').")
 
 # Rule 1 of the reflection check: questions about concepts get a direct answer, problems get Socratic hints
+# How many times a rejected answer is regenerated before the last one is accepted (each costs two LLM calls)
+MAX_REGENERATIONS = 1
+
 STYLE_RULES = {
     "rag": "**Must be a direct answer:** It must answer the student's question directly and clearly, without turning it into a guiding question or ending with a Socratic follow-up question.",
     "critique": "**Must be Socratic:** It must ask guiding questions, not give direct answers or solve the problem.",
@@ -185,6 +188,8 @@ class GraphState(TypedDict):
     messages: Annotated[list, add_messages]
     feedback_for_improvement: Optional[str]
     is_final_answer: bool
+    attempts: int  # reflection checks this turn
+    failed: bool  # the generator returned a canned error reply
 
 # --- TUTOR AGENT CLASS ---
 
@@ -230,10 +235,11 @@ class TutorAgent:
             filter_object = chain.invoke({"question": query})
             extracted_filters = {k: v for k, v in filter_object.dict().items() if v is not None}
             print(f"Extracted Filters: {extracted_filters}")
-            return {"filters": extracted_filters}
+            # This is the entry node, so it also resets the per-turn counters the checkpointer would carry over
+            return {"filters": extracted_filters, "attempts": 0, "feedback_for_improvement": None}
         except Exception as e:
             print(f"Error extracting filters: {e}")
-            return {"filters": {}}
+            return {"filters": {}, "attempts": 0, "feedback_for_improvement": None}
 
     def route_question(self, state: GraphState) -> dict:
         """
@@ -359,7 +365,8 @@ class TutorAgent:
             return {
                 "response": answer,
                 "sources": sources,
-                "feedback_for_improvement": None  # Clear feedback after use
+                "feedback_for_improvement": None,  # Clear feedback after use
+                "failed": False
             }
 
         except Exception as e:
@@ -367,11 +374,12 @@ class TutorAgent:
             import traceback
             traceback.print_exc()
             error_message = "I encountered an error while retrieving information. Please try rephrasing your question."
-            # We still need to return a response, but it won't be added to history as it will fail reflection.
+            # Returned to the user but skips reflection and is not added to history
             return {
                 "response": error_message,
                 "sources": [],
-                "feedback_for_improvement": None
+                "feedback_for_improvement": None,
+                "failed": True
             }
 
     def transcribe_image(self, state: GraphState) -> dict:
@@ -522,7 +530,8 @@ class TutorAgent:
             # The AIMessage will be added to history by the reflection node if the answer is approved.
             return {
                 "response": response,
-                "feedback_for_improvement": None # Clear feedback after use
+                "feedback_for_improvement": None, # Clear feedback after use
+                "failed": False
             }
 
         except Exception as e:
@@ -530,10 +539,11 @@ class TutorAgent:
             import traceback
             traceback.print_exc()
             error_message = "I encountered an error while preparing my response. Could you please try asking your question again?"
-            # We still need to return a response, but it won't be added to history as it will fail reflection.
+            # Returned to the user but skips reflection and is not added to history
             return {
                 "response": error_message,
-                "feedback_for_improvement": None
+                "feedback_for_improvement": None,
+                "failed": True
             }
 
 
@@ -546,7 +556,7 @@ class TutorAgent:
         return {
             "response": clarifying_question,
             "sources": [],
-            "is_final_answer": True # Bypass reflection for this simple response
+            "is_final_answer": True # Skips reflection (see should_reflect) and goes straight to history
         }
     
     def reflect_on_answer(self, state: GraphState) -> dict:
@@ -573,14 +583,19 @@ class TutorAgent:
         try:
             chain = prompt | self.reflection_chain
             reflection_result = chain.invoke({"response_to_check": response_to_check, "style_rule": style_rule})
-            
+
             print(f"  - Reflection Result: Is Final? {reflection_result.is_final_answer}")
+            attempts = state.get("attempts", 0) + 1
             if not reflection_result.is_final_answer:
+                if attempts > MAX_REGENERATIONS:
+                    print("  - Regeneration limit reached. Accepting the last answer.")
+                    return {"is_final_answer": True, "feedback_for_improvement": None, "attempts": attempts}
                 print(f"  - Feedback: {reflection_result.feedback_for_improvement}")
 
             return {
                 "is_final_answer": reflection_result.is_final_answer,
-                "feedback_for_improvement": reflection_result.feedback_for_improvement
+                "feedback_for_improvement": reflection_result.feedback_for_improvement,
+                "attempts": attempts
             }
         except Exception as e:
             print(f"Error during reflection: {e}. Approving response by default.")
@@ -639,6 +654,17 @@ def should_retrieve_context(state: GraphState) -> str:
     else:
         print("Decision: No, context is not needed.")
         return "generate_socratic_response"
+
+def should_reflect(state: GraphState) -> str:
+    """Skips reflection for clarifying questions and canned error replies."""
+    print("---EDGE: SHOULD REFLECT?---")
+    if state.get("route") == "clarify":
+        print("  - Decision: Clarifying question. Finalizing without reflection.")
+        return "finalize"
+    if state.get("failed"):
+        print("  - Decision: Error reply. Ending without reflection or history.")
+        return END
+    return "reflect_on_answer"
 
 def should_end_or_regenerate(state: GraphState) -> str:
     """
@@ -703,11 +729,11 @@ workflow.add_conditional_edges("critique_work", should_retrieve_context, {
 })
 workflow.add_edge("retrieve_context", "generate_socratic_response")
 
-# Connect response generators to reflection
-workflow.add_edge("simple_rag", "reflect_on_answer")
-workflow.add_edge("generate_socratic_response", "reflect_on_answer")
-# Clarification questions have 'is_final_answer' set to True, so they can go to the reflection edge
-workflow.add_edge("ask_clarification_question", "reflect_on_answer")
+# Connect response generators to reflection, unless the reply is a clarifying question or an error
+for node in ["simple_rag", "generate_socratic_response", "ask_clarification_question"]:
+    workflow.add_conditional_edges(node, should_reflect, {
+        "reflect_on_answer": "reflect_on_answer", "finalize": "finalize_history", END: END
+    })
 
 # The reflection loop logic
 workflow.add_conditional_edges(
