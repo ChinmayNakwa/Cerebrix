@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import { Card, Spin, Tag, Tooltip } from 'antd';
 import { Sparkles, PlayCircle, BookOpen, Lightbulb, PenLine, Film, Sigma } from 'lucide-react';
 import MathRenderer from '@/src/components/MathRenderer';
+import SpeakButton from '@/src/components/SpeakButton';
 
 export type Message = {
     role: 'user' | 'ta';
@@ -63,8 +64,11 @@ function MessageList({ messages, isLoading, onExample }: MessageListProps) {
                         ? 'bg-indigo-600/20 border border-indigo-500/30 text-white rounded-br-sm'
                         : 'glass text-zinc-100 rounded-bl-sm'
                     }`}>
-                        <div className="flex items-center gap-2 mb-2 opacity-50 text-xs font-bold uppercase tracking-wider">
-                            {msg.role === 'user' ? 'You' : <><Sparkles size={12} /> Cerebrix</>}
+                        <div className="flex items-center justify-between gap-2 mb-2">
+                            <div className="flex items-center gap-2 opacity-50 text-xs font-bold uppercase tracking-wider">
+                                {msg.role === 'user' ? 'You' : <><Sparkles size={12} /> Cerebrix</>}
+                            </div>
+                            {msg.role === 'ta' && <SpeakButton text={msg.content} />}
                         </div>
                         <MathRenderer content={msg.content} />
 
