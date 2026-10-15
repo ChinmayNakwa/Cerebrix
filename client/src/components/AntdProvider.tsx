@@ -19,7 +19,11 @@ export default function AntdProvider({ children }: { children: React.ReactNode }
           fontFamily: 'inherit',
         },
         components: {
-          Menu: { itemBg: 'transparent', horizontalItemSelectedColor: '#ffffff', itemColor: '#a1a1aa', itemHoverColor: '#ffffff' },
+          Menu: {
+            itemBg: 'transparent', itemColor: '#a1a1aa', itemHoverColor: '#ffffff',
+            horizontalItemSelectedColor: '#ffffff',
+            itemSelectedColor: '#ffffff', itemSelectedBg: 'rgba(99, 102, 241, 0.22)',
+          },
         },
       }}
     >

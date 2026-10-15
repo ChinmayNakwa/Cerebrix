@@ -1,7 +1,8 @@
 'use client';
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Plus, Menu, MessageSquare, Trash2 } from 'lucide-react';
+import { App, Button, Drawer, Grid, Menu, Popconfirm, Tooltip } from 'antd';
+import { X, Plus, Menu as MenuIcon, MessageSquare, Trash2 } from 'lucide-react';
 import MessageList, { type Message } from '@/src/components/MessageList';
 import ChatInput from '@/src/components/ChatInput';
 import { imageToBase64 } from '@/src/lib/image';
@@ -35,6 +36,10 @@ const createSession = (id: string): ChatSession => ({
 });
 
 export default function ChatPage() {
+    const { message } = App.useApp();
+    // Phones get the history in a drawer over the chat; wider screens get a side panel
+    const isMobile = Grid.useBreakpoint().md === false;
+
     // --- State ---
     const [messages, setMessages] = useState<Message[]>([]);
     const [sessionId, setSessionId] = useState('');
@@ -137,11 +142,7 @@ export default function ChatPage() {
         if (window.innerWidth < 768) setIsSidebarOpen(false);
     };
 
-    const handleDeleteSession = async (e: React.MouseEvent, idToDelete: string) => {
-        e.stopPropagation(); // Prevent triggering handleSelectSession
-        
-        if (!confirm("Are you sure you want to delete this chat history?")) return;
-
+    const handleDeleteSession = async (idToDelete: string) => {
         // 1. Update Frontend State immediately
         const updatedSessions = sessions.filter(s => s.id !== idToDelete);
         setSessions(updatedSessions);
@@ -160,10 +161,12 @@ export default function ChatPage() {
 
         // 3. Call Backend to delete from DB
         try {
-            await fetch(`/api/py/history/${idToDelete}`, { method: 'DELETE' });
+            const res = await fetch(`/api/py/history/${idToDelete}`, { method: 'DELETE' });
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            message.success("Chat deleted.");
         } catch (err) {
             console.error("Failed to delete from backend:", err);
-            // Optional: Show a toast notification here
+            message.error("The chat was removed here, but the server could not delete its history.");
         }
     };
 
@@ -205,96 +208,105 @@ export default function ChatPage() {
         } catch (error) {
             console.error(error);
             if (activeSessionRef.current !== sendId) return;
-            setMessages(prev => [...prev, { role: 'ta', content: "I'm having trouble connecting to my knowledge base." }]);
+            message.error("The tutor could not answer. Is the backend running?");
+            setMessages(prev => [...prev, { role: 'ta', content: "I'm having trouble connecting to my knowledge base. Please try again in a moment." }]);
         } finally {
             if (activeSessionRef.current === sendId) setIsLoading(false);
         }
     };
 
+    const sidebar = (
+        <div className="flex flex-col h-full">
+            <div className="p-4 flex items-center gap-2">
+                <Button type="primary" size="large" block icon={<Plus size={18} />} onClick={() => handleNewChat()}>
+                    New chat
+                </Button>
+                {isMobile && (
+                    <Button type="text" size="large" aria-label="Close history" icon={<X size={18} />} onClick={() => setIsSidebarOpen(false)} />
+                )}
+            </div>
+
+            <div className="px-4 pb-2 text-xs font-semibold text-zinc-500 uppercase tracking-wider">Recent chats</div>
+            <div className="flex-1 overflow-y-auto px-2 scrollbar-thin">
+                <Menu
+                    mode="inline"
+                    selectedKeys={[sessionId]}
+                    onClick={({ key }) => handleSelectSession(key)}
+                    className="border-e-0! bg-transparent!"
+                    items={sessions.map((session) => ({
+                        key: session.id,
+                        icon: <MessageSquare size={16} />,
+                        label: (
+                            <div className="group flex items-center justify-between gap-2">
+                                <span className="truncate">{session.preview}</span>
+                                {/* Clicks inside the confirm popup must not also select the chat */}
+                                <span onClick={(e) => e.stopPropagation()}>
+                                    <Popconfirm
+                                        title="Delete this chat?"
+                                        description="Its history is removed from the server too."
+                                        okText="Delete"
+                                        okButtonProps={{ danger: true }}
+                                        onConfirm={() => handleDeleteSession(session.id)}
+                                    >
+                                        <Button
+                                            type="text"
+                                            size="small"
+                                            danger
+                                            aria-label="Delete chat"
+                                            className="opacity-60 md:opacity-0 group-hover:opacity-100 focus:opacity-100"
+                                            icon={<Trash2 size={14} />}
+                                        />
+                                    </Popconfirm>
+                                </span>
+                            </div>
+                        ),
+                    }))}
+                />
+            </div>
+        </div>
+    );
+
     return (
         <div className="relative flex h-[calc(100vh-80px)] overflow-hidden">
-            
-            {/* Tap-outside backdrop, phones only (the sidebar overlays the chat there) */}
-            {isSidebarOpen && (
-                <div
-                    className="md:hidden absolute inset-0 z-20 bg-black/60"
-                    onClick={() => setIsSidebarOpen(false)}
-                />
+            {isMobile ? (
+                <Drawer
+                    placement="left"
+                    open={isSidebarOpen}
+                    onClose={() => setIsSidebarOpen(false)}
+                    size={280}
+                    closable={false}
+                    styles={{ body: { padding: 0 } }}
+                >
+                    {sidebar}
+                </Drawer>
+            ) : (
+                <AnimatePresence mode='wait'>
+                    {isSidebarOpen && (
+                        <motion.aside
+                            initial={{ width: 0, opacity: 0 }}
+                            animate={{ width: 280, opacity: 1 }}
+                            exit={{ width: 0, opacity: 0 }}
+                            className="bg-black/20 border-r border-white/5 backdrop-blur-md h-full shrink-0 overflow-hidden"
+                        >
+                            {sidebar}
+                        </motion.aside>
+                    )}
+                </AnimatePresence>
             )}
-
-            {/* --- LEFT SIDEBAR --- */}
-            <AnimatePresence mode='wait'>
-                {isSidebarOpen && (
-                    <motion.aside 
-                        initial={{ width: 0, opacity: 0 }} 
-                        animate={{ width: 280, opacity: 1 }} 
-                        exit={{ width: 0, opacity: 0 }}
-                        className="bg-zinc-950 md:bg-black/20 border-r border-white/5 backdrop-blur-md flex flex-col h-full z-30 absolute inset-y-0 left-0 md:relative"
-                    >
-                        <div className="p-4 flex items-center gap-2">
-                            <button 
-                                onClick={() => handleNewChat()}
-                                className="w-full flex items-center justify-center gap-2 bg-indigo-600/20 hover:bg-indigo-600/40 border border-indigo-500/30 text-indigo-100 p-3 rounded-xl transition-all shadow-sm"
-                            >
-                                <Plus size={18} />
-                                <span className="text-sm font-medium">New Chat</span>
-                            </button>
-                            <button
-                                onClick={() => setIsSidebarOpen(false)}
-                                aria-label="Close sidebar"
-                                className="md:hidden p-3 rounded-xl text-zinc-400 hover:text-white hover:bg-white/10 transition"
-                            >
-                                <X size={18} />
-                            </button>
-                        </div>
-
-                        <div className="flex-1 overflow-y-auto px-2 space-y-1 scrollbar-thin scrollbar-thumb-white/10">
-                            <div className="px-2 py-2 text-xs font-semibold text-zinc-500 uppercase tracking-wider">Recent History</div>
-                            {sessions.map((session) => (
-                                <div
-                                    key={session.id}
-                                    onClick={() => handleSelectSession(session.id)}
-                                    className={`group relative w-full text-left p-3 rounded-lg text-sm transition-colors flex items-center gap-3 cursor-pointer ${
-                                        sessionId === session.id 
-                                        ? 'bg-white/10 text-white shadow-inner' 
-                                        : 'text-zinc-400 hover:bg-white/5 hover:text-zinc-200'
-                                    }`}
-                                >
-                                    <MessageSquare size={16} className="shrink-0" />
-                                    <div className="truncate w-full pr-6">
-                                        {session.preview}
-                                    </div>
-
-                                    {/* Delete Button (Visible on Hover) */}
-                                    <button 
-                                        onClick={(e) => handleDeleteSession(e, session.id)}
-                                        className="absolute right-2 p-1.5 text-zinc-500 hover:text-red-400 hover:bg-red-400/10 rounded-md opacity-0 group-hover:opacity-100 transition-opacity"
-                                        title="Delete chat"
-                                    >
-                                        <Trash2 size={14} />
-                                    </button>
-                                </div>
-                            ))}
-                        </div>
-                    </motion.aside>
-                )}
-            </AnimatePresence>
 
             {/* --- MAIN CHAT AREA --- */}
             <main className="flex-1 flex flex-col relative min-w-0">
-                
-                {/* Mobile/Sidebar Toggle Header */}
-                <div className={`absolute top-4 left-4 z-10 ${isSidebarOpen ? 'max-md:hidden' : ''}`}>
-                     <button 
-                        onClick={() => setIsSidebarOpen(!isSidebarOpen)} 
-                        aria-label={isSidebarOpen ? "Close sidebar" : "Open sidebar"}
-                        className="p-2 bg-black/40 backdrop-blur-sm border border-white/10 rounded-lg text-zinc-400 hover:text-white transition"
-                    >
-                        {isSidebarOpen ? <X size={18} /> : <Menu size={18} />}
-                    </button>
+                <div className="absolute top-4 left-4 z-10">
+                    <Tooltip title={isSidebarOpen ? "Hide chats" : "Show chats"} placement="right">
+                        <Button
+                            aria-label={isSidebarOpen ? "Hide chats" : "Show chats"}
+                            icon={isSidebarOpen && !isMobile ? <X size={18} /> : <MenuIcon size={18} />}
+                            onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+                        />
+                    </Tooltip>
                 </div>
 
-                <MessageList messages={messages} isLoading={isLoading} />
+                <MessageList messages={messages} isLoading={isLoading} onExample={(q) => handleSend(q, null)} />
 
                 <ChatInput isLoading={isLoading} onSend={handleSend} onBusyChange={setIsLoading} />
             </main>

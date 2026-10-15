@@ -19,7 +19,8 @@ export default function Navbar() {
         <div className="bg-gradient-to-tr from-indigo-500 to-purple-500 p-1.5 rounded-lg group-hover:scale-110 transition-transform duration-300">
             <Sparkles size={18} className="text-white" fill="white" />
         </div>
-        <span className="font-bold text-xl tracking-tight">
+        {/* Wordmark hidden on phones so the three nav items fit on one line */}
+        <span className="font-bold text-xl tracking-tight max-sm:sr-only">
           Cerebrix
         </span>
       </Link>
