@@ -14,7 +14,8 @@ class SourceDocument(BaseModel):
     Represents a singe retrieved source document for citation.
     """
     source_type: str
-    location: str
+    location: str  # short label, e.g. "Lecture 3 · 20:24" or "Book p. 31-33"
+    title: Optional[str] = None  # lecture topic or book section, for a tooltip
     url: Optional[str] = None
 
 class AskResponse(BaseModel):

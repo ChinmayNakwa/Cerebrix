@@ -77,6 +77,21 @@ def _format_docs(docs: List[Document]) -> str:
     return final_context_str
 
 
+def _short_timestamp(seconds) -> str:
+    """20:24 or 1:02:03, the way YouTube shows a position."""
+    h, m = divmod(int(seconds or 0), 3600)
+    m, s = divmod(m, 60)
+    return f"{h}:{m:02d}:{s:02d}" if h else f"{m}:{s:02d}"
+
+
+def _lecture_topic(title: str) -> str:
+    """'Stanford CS109 Probability for Computer Scientists I Counting I 2022 I Lecture 1' -> 'Counting'
+    (the playlist titles use ' I ' as a separator)."""
+    parts = [p.strip() for p in title.split(" I ")]
+    topic = [p for p in parts if not p.startswith("Stanford") and not re.fullmatch(r"\d{4}|Lecture \d+", p)]
+    return " · ".join(topic) or title
+
+
 def _get_sources(docs: List[Document]) -> List[SourceDocument]:
     """
     Creates a list of SourceDocument objects from the retrieved docs.
@@ -88,11 +103,17 @@ def _get_sources(docs: List[Document]) -> List[SourceDocument]:
     for doc in docs:
         if doc.metadata.get('source') == 'video':
             title = doc.metadata.get('title', 'N/A')
+            lecture = doc.metadata.get('lecture')
+            label = f"Lecture {lecture}" if lecture else "Lecture"
             source = SourceDocument(source_type='video',
-                                    location=f"'{title}' at {_timestamp(doc.metadata.get('start_sec'))}",
+                                    location=f"{label} · {_short_timestamp(doc.metadata.get('start_sec'))}",
+                                    title=_lecture_topic(title),
                                     url=doc.metadata.get("video_url"))
         else:
-            source = SourceDocument(source_type='book', location=_pages(doc))
+            start, end = doc.metadata.get('page_start'), doc.metadata.get('page_end')
+            pages = f"p. {start}" if start == end else f"p. {start}-{end}"
+            source = SourceDocument(source_type='book', location=f"Book {pages}",
+                                    title=doc.metadata.get('section') or None)
 
         if source.location not in unique_sources:
             sources.append(source)
