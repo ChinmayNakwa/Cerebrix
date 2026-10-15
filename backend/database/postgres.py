@@ -19,8 +19,15 @@ pool = AsyncConnectionPool(
     open=False 
 )
 
-# Initialize the checkpointer with the pool
-checkpointer = AsyncPostgresSaver(pool)
+# Created by create_checkpointer() in app.py's lifespan: AsyncPostgresSaver needs a running event loop,
+# and uvicorn imports the app before starting its loop
+checkpointer: AsyncPostgresSaver | None = None
+
+
+def create_checkpointer() -> AsyncPostgresSaver:
+    global checkpointer
+    checkpointer = AsyncPostgresSaver(pool)
+    return checkpointer
 
 async def delete_thread_data(thread_id: str):
     """

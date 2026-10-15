@@ -8,14 +8,18 @@ from contextlib import asynccontextmanager
 from langchain_core.messages import HumanMessage, AIMessage
 
 from .core.schemas import AskRequest, AskResponse
-from .core.rag.agent import app_graph
+from .core.rag.agent import workflow
 from .utils.voice_service import transcribe_audio, text_to_speech, load_tts
 from .database.setup_db import create_database_if_missing
-from .database.postgres import pool, checkpointer, delete_thread_data
+from .database.postgres import pool, create_checkpointer, delete_thread_data
+
+# The agent graph with the Postgres checkpointer, compiled in lifespan once the event loop is running
+app_graph = None
 
 # --- Lifecycle Manager ---
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    global app_graph
     print("--- Startup Sequence ---")
     
     # 1. Ensure the Database exists (using db_setup.py)
@@ -27,8 +31,10 @@ async def lifespan(app: FastAPI):
     
     # 3. Create/Verify Tables (using LangGraph checkpointer)
     print("DB: Verifying checkpoint tables...")
+    checkpointer = create_checkpointer()
     await checkpointer.setup()
-    
+    app_graph = workflow.compile(checkpointer=checkpointer)
+
     print("--- System Ready ---")
     yield
     

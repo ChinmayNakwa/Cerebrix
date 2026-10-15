@@ -126,7 +126,7 @@ python -m backend.core.rag.evaluate
 ### 6. Run
 
 ```bash
-# Backend on port 8000
+# Backend on port 8000 (on Windows, add --loop asyncio:SelectorEventLoop: async psycopg cannot use the default Proactor loop)
 uvicorn backend.app:app --port 8000
 
 # Frontend on port 3000 (proxies /api/py to API_URL, default http://127.0.0.1:8000)

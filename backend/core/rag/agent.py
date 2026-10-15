@@ -8,8 +8,6 @@ from langchain_core.runnables import RunnableLambda, RunnableParallel, RunnableP
 from typing import List, Dict, Any, TypedDict, Optional, Annotated
 from langgraph.graph.message import add_messages
 from langgraph.graph import StateGraph, END
-from langgraph.checkpoint.memory import MemorySaver
-from backend.database.postgres import checkpointer
 from pydantic import BaseModel, Field
 import operator
 import json
@@ -752,10 +750,7 @@ workflow.add_conditional_edges(
 # The final step is to end the graph
 workflow.add_edge("finalize_history", END)
 
-# Add memory for conversation persistence
-memory = MemorySaver()
-
-# Compile the graph
-app_graph = workflow.compile(checkpointer=checkpointer)
-# app_graph = workflow.compile()
+# Compiled without a checkpointer for `langgraph dev` (langgraph.json), which supplies its own persistence.
+# The API compiles `workflow` with the Postgres checkpointer in app.py's lifespan.
+app_graph = workflow.compile()
 print("Combined LangGraph agent compiled successfully with memory, Postgres hybrid retrieval, intelligent routing, and robust error handling.")
