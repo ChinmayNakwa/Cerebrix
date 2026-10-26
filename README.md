@@ -40,31 +40,103 @@ This project emerged from that need, creating an intelligent assistant that any 
 
 ## Features
 
--   **Multi-Modal Knowledge Base:** Ingests and understands content from both a PDF textbook and a full YouTube video playlist.
--   **Advanced RAG Pipeline:** Uses a sophisticated Retrieval-Augmented Generation (RAG) pipeline with metadata filtering for precise, context-aware answers.
--   **Socratic Tutoring:** When a user submits their work (via text or image), the agent analyzes their approach and provides guiding hints rather than direct answers. Questions about concepts and definitions get a direct answer.
+-   **Multi-Modal Knowledge Base:** Ingests the CS109 course book and all 29 lectures of the YouTube playlist, including formulas, slides and keyframes.
+-   **Hybrid Retrieval:** Searches with both `pgvector` similarity and Postgres full-text search, fuses the two rankings and narrows to a lecture or page when the question names one.
 -   **Concept Graph:** Concepts, definitions, theorems and formulas extracted from the book and lectures are linked in a graph, so answers can pull in closely related material.
--   **Voice Input:** Questions can be spoken; they are transcribed locally.
--   **Conversational Memory:** Remembers the context of the conversation for follow-up questions.
--   **Powered by LangGraph:** Built on a robust, stateful agent architecture using LangGraph.
+-   **Cited Sources:** Every answer lists where it came from, with book page ranges and lecture timestamps that link to the exact moment in the video.
+-   **Socratic Tutoring:** When a user submits their work (via text or image), the agent analyzes their approach and provides guiding hints rather than direct answers. Questions about concepts and definitions get a direct answer.
+-   **Self-Review:** Each answer is checked against the tutor's rules before it is sent, and regenerated once if it falls short.
+-   **Voice:** Questions can be spoken and answers read aloud, both with models that run locally.
+-   **Maths Rendering:** Answers render LaTeX with KaTeX.
+-   **Conversational Memory:** Each chat is stored in Postgres, so follow-up questions keep their context.
 
 ## Project Architecture
 
--   **Backend:** A `FastAPI` server running a `LangGraph` agent.
--   **Frontend:** A static `Nextjs` chat interface.
--   **Database:** `PostgreSQL` with `pgvector` for the chunk embeddings, full-text search, the concept graph and chat history.
+-   **Backend:** A `FastAPI` server running a `LangGraph` agent, traced in `LangSmith`.
+-   **Frontend:** A `Next.js` app with `Ant Design`, a chat page, and an about page with interactive `React Flow` diagrams of how Cerebrix works.
+-   **Database:** `PostgreSQL` with `pgvector` for the chunk embeddings, full-text search, the concept graph and chat history (LangGraph checkpoints).
 -   **Image Hosting:** `Cloudinary` for storing page images and video keyframes.
 -   **LLMs:** `Ollama Cloud`, with `gpt-oss:120b` for reasoning and answers and `gemma4:31b` for reading images.
 -   **Speech:** Local `faster-whisper` for voice questions and `Kokoro` for text-to-speech.
 -   **Data Ingestion:** A staged Python pipeline (`backend/ingestion`) using `Docling` and `PyMuPDF` for the textbook, YouTube captions, `yt-dlp` and `ffmpeg` keyframes for the lectures, Ollama Cloud vision for formulas and slides, and `bge-base-en-v1.5` embeddings.
 
----
+### The Agent Graph
 
-<img width="1141" height="705" alt="flow" src="https://github.com/user-attachments/assets/ef90fc40-d290-4ff4-9a68-9b67d89a3624" />
+This is the tutor's LangGraph graph, the same one LangSmith Studio shows. Solid arrows always run; dotted arrows are conditional.
+
+```mermaid
+---
+config:
+  flowchart:
+    curve: linear
+---
+graph TD;
+	__start__([__start__]):::first
+	extract_filters(extract_filters)
+	route_question(route_question)
+	ask_clarification_question(ask_clarification_question)
+	simple_rag(simple_rag)
+	transcribe_image(transcribe_image)
+	critique_work(critique_work)
+	retrieve_context(retrieve_context)
+	generate_socratic_response(generate_socratic_response)
+	reflect_on_answer(reflect_on_answer)
+	finalize_history(finalize_history)
+	__end__([__end__]):::last
+	__start__ --> extract_filters;
+	ask_clarification_question -.-> __end__;
+	ask_clarification_question -. &nbsp;finalize&nbsp; .-> finalize_history;
+	ask_clarification_question -.-> reflect_on_answer;
+	critique_work -.-> generate_socratic_response;
+	critique_work -.-> retrieve_context;
+	extract_filters --> route_question;
+	generate_socratic_response -.-> __end__;
+	generate_socratic_response -. &nbsp;finalize&nbsp; .-> finalize_history;
+	generate_socratic_response -.-> reflect_on_answer;
+	reflect_on_answer -.-> __end__;
+	reflect_on_answer -. &nbsp;finalize&nbsp; .-> finalize_history;
+	reflect_on_answer -.-> generate_socratic_response;
+	reflect_on_answer -.-> simple_rag;
+	retrieve_context --> generate_socratic_response;
+	route_question -.-> ask_clarification_question;
+	route_question -.-> simple_rag;
+	route_question -.-> transcribe_image;
+	simple_rag -.-> __end__;
+	simple_rag -. &nbsp;finalize&nbsp; .-> finalize_history;
+	simple_rag -.-> reflect_on_answer;
+	transcribe_image --> critique_work;
+	finalize_history --> __end__;
+	classDef default fill:#f2f0ff,line-height:1.2
+	classDef first fill-opacity:0
+	classDef last fill:#bfb6fc
+```
+
+| Node | What it does |
+|---|---|
+| `extract_filters` | Pulls a lecture number or book page out of the question, to narrow the search. |
+| `route_question` | Sends questions about concepts to `simple_rag`, submitted work (or any image) to `transcribe_image`, and unclear messages to `ask_clarification_question`. Later turns are routed with the whole conversation in view. |
+| `simple_rag` | Retrieves the top 5 passages and answers from them alone. |
+| `transcribe_image` | Reads a photo of the student's work with the vision model. |
+| `critique_work` | Finds where the student's approach goes wrong and decides whether course material is needed. |
+| `retrieve_context` | Retrieves the top 3 passages for the critique. |
+| `generate_socratic_response` | Writes a guiding hint instead of the full solution. |
+| `ask_clarification_question` | Asks the student what they mean. |
+| `reflect_on_answer` | Checks the answer against the tutor's rules and sends it back for one regeneration if it fails. |
+| `finalize_history` | Saves the approved answer to the chat history. |
+
+Clarifying questions skip the review, and error replies end the run without being saved.
+
+To open the graph in LangSmith Studio and step through runs, run `langgraph dev` from the repository root (it reads `langgraph.json`). To regenerate the diagram above after changing the graph:
+
+```bash
+python -c "from backend.core.rag.agent import workflow; print(workflow.compile().get_graph().draw_mermaid())"
+```
+
+---
 
 ## 🚀 Getting Started
 
-Follow these steps to set up and run the Maths AI Tutor on your local machine.
+Follow these steps to set up and run Cerebrix on your local machine.
 
 ### 1. Prerequisites
 
@@ -74,7 +146,7 @@ Follow these steps to set up and run the Maths AI Tutor on your local machine.
 -   Access keys for:
     -   Ollama Cloud
     -   Cloudinary
-    -   LangSmith (optional, but highly recommended for debugging)
+    -   LangSmith (the backend needs a key and always sends traces there)
 
 ### 2. Environment Setup
 
@@ -82,8 +154,8 @@ This project uses `conda` to manage its complex dependencies.
 
 ```bash
 # Clone the repository
-git clone https://github.com/ChinmayNakwa/Cerebrix.git
-cd Cerebrix
+git clone https://github.com/ChinmayNakwa/Maths-TA.git
+cd Maths-TA
 
 # Create and activate the conda environment
 conda create --name cerebrix python=3.12
@@ -99,7 +171,7 @@ pip install -r backend/requirements.txt
 
 ### 3. Configuration
 
-Copy `.env.example` to `.env` and fill in the keys. With the database from the next step, `POSTGRES_DB_URL` is `postgresql://mathsta:mathsta@127.0.0.1:5435/mathsta` (use `127.0.0.1`, not `localhost`). Also set `PDF_PATH` to the textbook PDF and `VIDEO_DIR` to a folder holding the lecture videos as `.mp4` files named after their YouTube titles.
+Copy `.env.example` to `.env` and fill in the keys. `LANGSMITH_PROJECT` names the LangSmith project the traces go to. With the database from the next step, `POSTGRES_DB_URL` is `postgresql://mathsta:mathsta@127.0.0.1:5435/mathsta` (use `127.0.0.1`, not `localhost`). Also set `PDF_PATH` to the textbook PDF and `VIDEO_DIR` to a folder holding the lecture videos as `.mp4` files named after their YouTube titles.
 
 ### 4. Database
 
