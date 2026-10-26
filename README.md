@@ -106,9 +106,9 @@ graph TD;
 	simple_rag -.-> reflect_on_answer;
 	transcribe_image --> critique_work;
 	finalize_history --> __end__;
-	classDef default fill:#f2f0ff,line-height:1.2
-	classDef first fill-opacity:0
-	classDef last fill:#bfb6fc
+	classDef default fill:#f2f0ff,stroke:#7c6fd6,color:#1f1a3d,line-height:1.2
+	classDef first fill:#f2f0ff,stroke:#7c6fd6,color:#1f1a3d
+	classDef last fill:#bfb6fc,stroke:#7c6fd6,color:#1f1a3d
 ```
 
 | Node | What it does |
