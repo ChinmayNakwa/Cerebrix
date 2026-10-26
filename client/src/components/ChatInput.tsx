@@ -1,7 +1,7 @@
 'use client';
-import { useState, useRef } from 'react';
-import { motion } from 'framer-motion';
-import { Send, Mic, Image as ImageIcon, StopCircle, X } from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
+import { App, Button, Input, Tag, Tooltip, Upload } from 'antd';
+import { Send, Mic, Image as ImageIcon, Square } from 'lucide-react';
 
 type ChatInputProps = {
     isLoading: boolean;
@@ -10,53 +10,73 @@ type ChatInputProps = {
 };
 
 export default function ChatInput({ isLoading, onSend, onBusyChange }: ChatInputProps) {
+    const { message } = App.useApp();
     const [input, setInput] = useState('');
     const [isRecording, setIsRecording] = useState(false);
+    const [isTranscribing, setIsTranscribing] = useState(false);
     const [selectedImage, setSelectedImage] = useState<File | null>(null);
+    const [preview, setPreview] = useState<string | null>(null);
 
-    const fileInputRef = useRef<HTMLInputElement>(null);
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
 
-    const handleSubmit = (e?: React.FormEvent) => {
-        e?.preventDefault();
-        if ((!input.trim() && !selectedImage) || isLoading) return;
+    // Thumbnail for the attached image, released when it changes
+    useEffect(() => {
+        if (!selectedImage) return;
+        const url = URL.createObjectURL(selectedImage);
+        setPreview(url); // eslint-disable-line react-hooks/set-state-in-effect -- object URLs only exist in the browser
+        return () => URL.revokeObjectURL(url);
+    }, [selectedImage]);
 
-        onSend(input, selectedImage);
+    const canSend = (input.trim() || selectedImage) && !isLoading;
+
+    const handleSubmit = () => {
+        if (!canSend) return;
+        onSend(input.trim(), selectedImage);
         setInput('');
         setSelectedImage(null);
+    };
+
+    const transcribe = async (blob: Blob) => {
+        const formData = new FormData();
+        formData.append("audio_file", blob, "recording.webm");
+        setIsTranscribing(true);
+        onBusyChange(true);
+        try {
+            const res = await fetch('/api/py/transcribe', { method: 'POST', body: formData });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.detail || "Transcription failed");
+            if (typeof data.transcription === 'string') setInput(data.transcription);
+        } catch (e) {
+            console.error(e);
+            message.error(e instanceof Error && e.message !== "Transcription failed"
+                ? e.message
+                : "Couldn't transcribe that recording. Please try again or type your question.");
+        } finally {
+            setIsTranscribing(false);
+            onBusyChange(false);
+        }
     };
 
     const toggleRecording = async () => {
         if (isRecording) {
             mediaRecorderRef.current?.stop();
             setIsRecording(false);
-        } else {
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                const recorder = new MediaRecorder(stream);
-                const chunks: BlobPart[] = [];
-                recorder.ondataavailable = e => chunks.push(e.data);
-                recorder.onstop = async () => {
-                    const blob = new Blob(chunks, { type: 'audio/webm' });
-                    const formData = new FormData();
-                    formData.append("audio_file", blob, "recording.webm");
-                    onBusyChange(true);
-                    try {
-                        const res = await fetch('/api/py/transcribe', { method: 'POST', body: formData });
-                        const data = await res.json();
-                        if (!res.ok) throw new Error(data.detail || "Transcription failed");
-                        if (typeof data.transcription === 'string') setInput(data.transcription);
-                    } catch (e) {
-                        console.error(e);
-                        alert("Couldn't transcribe that recording. Please try again or type your question.");
-                    }
-                    finally { onBusyChange(false); }
-                    stream.getTracks().forEach(track => track.stop());
-                };
-                recorder.start();
-                mediaRecorderRef.current = recorder;
-                setIsRecording(true);
-            } catch { alert("Microphone access denied."); }
+            return;
+        }
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            const recorder = new MediaRecorder(stream);
+            const chunks: BlobPart[] = [];
+            recorder.ondataavailable = e => chunks.push(e.data);
+            recorder.onstop = () => {
+                stream.getTracks().forEach(track => track.stop());
+                transcribe(new Blob(chunks, { type: 'audio/webm' }));
+            };
+            recorder.start();
+            mediaRecorderRef.current = recorder;
+            setIsRecording(true);
+        } catch {
+            message.error("Microphone access was denied.");
         }
     };
 
@@ -64,37 +84,65 @@ export default function ChatInput({ isLoading, onSend, onBusyChange }: ChatInput
         <div className="p-4 md:p-6 z-20 relative">
             <div className="max-w-4xl mx-auto">
                 {selectedImage && (
-                    <motion.div initial={{opacity: 0, y: 10}} animate={{opacity: 1, y: 0}} className="absolute bottom-full left-4 md:left-6 mb-3 p-3 glass rounded-xl flex items-center gap-3">
-                        <div className="w-8 h-8 bg-white/10 rounded flex items-center justify-center"><ImageIcon size={14}/></div>
-                        <span className="text-xs text-zinc-300 truncate max-w-[200px]">{selectedImage.name}</span>
-                        <button onClick={() => setSelectedImage(null)} className="hover:text-red-400"><X size={14}/></button>
-                    </motion.div>
+                    <Tag
+                        closable
+                        onClose={() => setSelectedImage(null)}
+                        className="mb-2 flex! w-fit items-center gap-2 py-1!"
+                        icon={preview
+                            // eslint-disable-next-line @next/next/no-img-element -- a local object URL, not an optimizable asset
+                            ? <img src={preview} alt="" className="h-8 w-8 rounded object-cover" />
+                            : <ImageIcon size={14} />}
+                    >
+                        <span className="truncate max-w-[220px]">{selectedImage.name}</span>
+                    </Tag>
                 )}
 
-                <form onSubmit={handleSubmit} className="glass rounded-2xl p-2 flex items-center gap-2 shadow-2xl shadow-indigo-500/5 transition-all focus-within:border-indigo-500/50">
-                    <button type="button" onClick={() => fileInputRef.current?.click()} className="p-3 hover:bg-white/10 rounded-xl text-zinc-400 hover:text-white transition">
-                        <ImageIcon size={20} />
-                    </button>
-                    <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={(e) => { if(e.target.files?.[0]) setSelectedImage(e.target.files[0]); }} />
+                <div className="glass rounded-2xl p-2 flex items-end gap-1 shadow-2xl shadow-indigo-500/5 transition-all focus-within:border-indigo-500/50">
+                    <Upload
+                        accept="image/*"
+                        showUploadList={false}
+                        beforeUpload={(file) => { setSelectedImage(file); return false; }}
+                    >
+                        <Tooltip title="Attach a photo of your work">
+                            <Button type="text" size="large" aria-label="Attach image" icon={<ImageIcon size={20} />} />
+                        </Tooltip>
+                    </Upload>
 
-                    <input
-                        type="text"
+                    <Input.TextArea
                         value={input}
                         onChange={(e) => setInput(e.target.value)}
-                        placeholder="Ask a question..."
-                        className="flex-grow bg-transparent border-none outline-none text-white placeholder-zinc-500 px-2 py-2"
+                        onPressEnter={(e) => { if (!e.shiftKey) { e.preventDefault(); handleSubmit(); } }}
+                        placeholder={isTranscribing ? "Transcribing..." : "Ask a question or describe a problem..."}
+                        autoSize={{ minRows: 1, maxRows: 6 }}
+                        variant="borderless"
+                        // The bar around it shows focus (focus-within), so the field's own outline is dropped
+                        className="text-base! outline-none!"
                     />
 
-                    <button type="button" onClick={toggleRecording} className={`p-3 rounded-xl transition ${isRecording ? 'text-red-500 animate-pulse bg-red-500/10' : 'text-zinc-400 hover:text-white hover:bg-white/10'}`}>
-                        {isRecording ? <StopCircle size={20} /> : <Mic size={20} />}
-                    </button>
+                    <Tooltip title={isRecording ? "Stop recording" : "Ask by voice"}>
+                        <Button
+                            type="text"
+                            size="large"
+                            danger={isRecording}
+                            loading={isTranscribing}
+                            aria-label={isRecording ? "Stop recording" : "Record a question"}
+                            className={isRecording ? 'animate-pulse' : undefined}
+                            icon={isRecording ? <Square size={18} /> : <Mic size={20} />}
+                            onClick={toggleRecording}
+                        />
+                    </Tooltip>
 
-                    <button type="submit" disabled={isLoading || (!input && !selectedImage)} className="bg-white text-black p-3 rounded-xl hover:scale-105 active:scale-95 transition disabled:opacity-50 disabled:scale-100">
-                        <Send size={20} />
-                    </button>
-                </form>
+                    <Button
+                        type="primary"
+                        size="large"
+                        aria-label="Send"
+                        disabled={!canSend}
+                        icon={<Send size={18} />}
+                        onClick={handleSubmit}
+                    />
+                </div>
                 <div className="text-center mt-2 text-xs text-zinc-600">
-                    Cerebrix can make mistakes. Check important info.
+                    Enter to send, Shift+Enter for a new line. Cerebrix can make mistakes, so check important results.
                 </div>
             </div>
         </div>

@@ -1,25 +1,53 @@
 'use client';
 import { memo, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Sparkles } from 'lucide-react';
+import { Card, Spin, Tag, Tooltip } from 'antd';
+import { Sparkles, PlayCircle, BookOpen, Lightbulb, PenLine, Film, Sigma } from 'lucide-react';
 import MathRenderer from '@/src/components/MathRenderer';
+import SpeakButton from '@/src/components/SpeakButton';
 
 export type Message = {
     role: 'user' | 'ta';
     content: string;
-    sources?: Array<{ location: string; url?: string | null }>;
+    sources?: Array<{ source_type?: string; location: string; title?: string | null; url?: string | null }>;
 };
 
 type MessageListProps = {
     messages: Message[];
     isLoading: boolean;
+    onExample: (question: string) => void;
 };
 
-const chipClass = "text-[10px] uppercase tracking-wide bg-black/40 px-3 py-1.5 rounded-full border border-white/10 text-zinc-400";
+const examples = [
+    { icon: <Lightbulb size={16} className="text-amber-400" />, label: "Concept", text: "What is a p-value?" },
+    { icon: <Sigma size={16} className="text-indigo-400" />, label: "Theorem", text: "Explain the central limit theorem." },
+    { icon: <PenLine size={16} className="text-emerald-400" />, label: "Problem", text: "How do I find P(X > 3) for X ~ Poisson(2)?" },
+    { icon: <Film size={16} className="text-red-400" />, label: "Lecture", text: "What does Lecture 4 cover about Bayes' theorem?" },
+];
+
 const isWebUrl = (url?: string | null): url is string => !!url && /^https?:\/\//i.test(url);
 
-function MessageList({ messages, isLoading }: MessageListProps) {
+function SourceTag({ src }: { src: NonNullable<Message['sources']>[number] }) {
+    const isVideo = src.source_type === 'video';
+    const tag = (
+        <Tag
+            icon={isVideo ? <PlayCircle size={12} /> : <BookOpen size={12} />}
+            color={isVideo ? 'red' : 'blue'}
+            variant="filled"
+            className="inline-flex! items-center gap-1 m-0!"
+        >
+            {src.location}
+        </Tag>
+    );
+    const linked = isWebUrl(src.url)
+        ? <a href={src.url} target="_blank" rel="noopener noreferrer" aria-label={`${src.location} (opens YouTube)`}>{tag}</a>
+        : tag;
+    return src.title ? <Tooltip title={src.title}>{linked}</Tooltip> : linked;
+}
+
+function MessageList({ messages, isLoading, onExample }: MessageListProps) {
     const messagesEndRef = useRef<HTMLDivElement>(null);
+    const showExamples = messages.length <= 1 && !isLoading;
 
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -36,32 +64,53 @@ function MessageList({ messages, isLoading }: MessageListProps) {
                         ? 'bg-indigo-600/20 border border-indigo-500/30 text-white rounded-br-sm'
                         : 'glass text-zinc-100 rounded-bl-sm'
                     }`}>
-                        <div className="flex items-center gap-2 mb-2 opacity-50 text-xs font-bold uppercase tracking-wider">
-                            {msg.role === 'user' ? 'You' : <><Sparkles size={12} /> Cerebrix</>}
+                        <div className="flex items-center justify-between gap-2 mb-2">
+                            <div className="flex items-center gap-2 opacity-50 text-xs font-bold uppercase tracking-wider">
+                                {msg.role === 'user' ? 'You' : <><Sparkles size={12} /> Cerebrix</>}
+                            </div>
+                            {msg.role === 'ta' && <SpeakButton text={msg.content} />}
                         </div>
                         <MathRenderer content={msg.content} />
 
                         {msg.sources && msg.sources.length > 0 && (
-                            <div className="mt-4 pt-3 border-t border-white/5 flex flex-wrap gap-2">
-                                {msg.sources.map((src, i) =>
-                                    isWebUrl(src.url) ? (
-                                        <a key={i} href={src.url} target="_blank" rel="noopener noreferrer"
-                                            className={`${chipClass} hover:text-white hover:border-indigo-500/50 transition`}>
-                                            {src.location}
-                                        </a>
-                                    ) : (
-                                        <div key={i} className={chipClass}>{src.location}</div>
-                                    )
-                                )}
+                            <div className="mt-4 pt-3 border-t border-white/5">
+                                <div className="mb-2 text-[11px] uppercase tracking-wider text-zinc-500">Sources</div>
+                                <div className="flex flex-wrap gap-2">
+                                    {msg.sources.map((src, i) => <SourceTag key={i} src={src} />)}
+                                </div>
                             </div>
                         )}
                     </div>
                 </motion.div>
             ))}
+
+            {showExamples && (
+                <div className="max-w-3xl">
+                    <div className="mb-3 text-xs uppercase tracking-wider text-zinc-500">Try asking</div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {examples.map((ex) => (
+                            <Card
+                                key={ex.text}
+                                size="small"
+                                hoverable
+                                role="button"
+                                tabIndex={0}
+                                onClick={() => onExample(ex.text)}
+                                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onExample(ex.text); } }}
+                                className="glass!"
+                            >
+                                <div className="flex items-center gap-2 mb-1 text-xs text-zinc-500">{ex.icon}{ex.label}</div>
+                                <div className="text-sm text-zinc-200">{ex.text}</div>
+                            </Card>
+                        ))}
+                    </div>
+                </div>
+            )}
+
             {isLoading && (
-                <div className="flex items-center gap-2 text-zinc-500 text-sm ml-4 bg-surface/50 px-4 py-2 rounded-full w-fit">
-                    <Sparkles size={14} className="animate-pulse text-indigo-400"/>
-                    <span>Thinking...</span>
+                <div data-loading="true" className="flex items-center gap-3 text-zinc-400 text-sm ml-2 glass px-4 py-2 rounded-full w-fit">
+                    <Spin size="small" />
+                    <span>Thinking: searching the book and lectures...</span>
                 </div>
             )}
             <div ref={messagesEndRef} />

@@ -8,6 +8,19 @@ import 'katex/dist/katex.min.css';
 const remarkPlugins = [remarkMath];
 const rehypePlugins = [rehypeKatex];
 
+// The model writes LaTeX as \( … \) and \[ … \], but remark-math only reads $ … $ and $$ … $$
+// (and Markdown would otherwise eat the backslashes). Code spans and blocks are left alone.
+export function normalizeMath(text: string) {
+  return text
+    .split(/(```[\s\S]*?```|`[^`\n]*`)/g)
+    .map((part, i) => i % 2 ? part : part
+      // Keep the line's indentation so a formula inside a list item stays in that item
+      .replace(/(^[ \t]*)?\\\[([\s\S]+?)\\\]/gm, (_, indent: string = '', tex: string) =>
+        `\n${indent}$$\n${indent}${tex.trim()}\n${indent}$$\n`)
+      .replace(/\\\(([\s\S]+?)\\\)/g, (_, tex: string) => `$${tex.trim()}$`))
+    .join('');
+}
+
 // react-markdown passes the hast `node` prop, which must not reach the DOM element.
 function withoutNode<T extends { node?: unknown }>(props: T) {
   const rest = { ...props };
@@ -34,7 +47,7 @@ function MathRenderer({ content }: { content: string }) {
         rehypePlugins={rehypePlugins}
         components={components}
       >
-        {content}
+        {normalizeMath(content)}
       </ReactMarkdown>
     </div>
   );
